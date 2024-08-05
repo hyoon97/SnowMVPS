@@ -1,0 +1,5 @@
+bearPNG
+buddhaPNG
+cowPNG
+pot2PNG
+readingPNG

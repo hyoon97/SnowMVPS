@@ -1,0 +1,62 @@
+num gpus : 1
+current time 20240805_140428
+creating new summary file
+argv: ['--logdir', './checkpoints/mvps/', '--dataset=general_eval4_synthetic_ps', '--batch_size=16', '--trainpath=/ssd3/hsy/Dataset/MVPS_dataset_2022b_vulcan/', '--summary_freq', '100', '--group_cor', '--rt', '--inverse_depth', '--trainlist', '/ssd3/hsy/Dataset/MVPS_dataset_2022b_vulcan/synthetic_pairs.txt', '--testlist', '/ssd3/hsy/Dataset/MVPS_dataset_2022b_vulcan/synthetic_pairs.txt']
+################################  args  ################################
+mode      	train                         	<class 'str'>       
+device    	cuda                          	<class 'str'>       
+dataset   	general_eval4_synthetic_ps    	<class 'str'>       
+trainpath 	/ssd3/hsy/Dataset/MVPS_dataset_2022b_vulcan/	<class 'str'>       
+testpath  	/ssd3/hsy/Dataset/MVPS_dataset_2022b_vulcan/	<class 'str'>       
+trainlist 	/ssd3/hsy/Dataset/MVPS_dataset_2022b_vulcan/synthetic_pairs.txt	<class 'str'>       
+testlist  	/ssd3/hsy/Dataset/MVPS_dataset_2022b_vulcan/synthetic_pairs.txt	<class 'str'>       
+epochs    	25                            	<class 'int'>       
+lr        	0.001                         	<class 'float'>     
+lrepochs  	4,8,11,13,16,18,19:1.5        	<class 'str'>       
+wd        	0.0                           	<class 'float'>     
+batch_size	16                            	<class 'int'>       
+interval_scale	1.06                          	<class 'float'>     
+loadckpt  	None                          	<class 'NoneType'>  
+logdir    	./checkpoints/mvps/           	<class 'str'>       
+resume    	False                         	<class 'bool'>      
+summary_freq	100                           	<class 'int'>       
+save_freq 	1                             	<class 'int'>       
+eval_freq 	1                             	<class 'int'>       
+seed      	1                             	<class 'int'>       
+pin_m     	False                         	<class 'bool'>      
+local_rank	2                             	<class 'int'>       
+ps_fuse_type	max                           	<class 'str'>       
+ps_feat_chs	16                            	<class 'int'>       
+ps_loadckpt	/ssd3/hsy/SnowMVPS/checkpoints/mvpsnet_pretrained.ckpt	<class 'str'>       
+ndepths   	48,32,8                       	<class 'str'>       
+depth_inter_r	0.5,0.5,0.5,1                 	<class 'str'>       
+dlossw    	1,1,1,1                       	<class 'str'>       
+l1ce_lw   	0,1                           	<class 'str'>       
+fpn_base_channel	8                             	<class 'int'>       
+reg_channel	8                             	<class 'int'>       
+reg_mode  	reg2d                         	<class 'str'>       
+group_cor 	True                          	<class 'bool'>      
+group_cor_dim	64,32,16                      	<class 'str'>       
+inverse_depth	True                          	<class 'bool'>      
+agg_type  	ConvBnReLU3D                  	<class 'str'>       
+dcn       	False                         	<class 'bool'>      
+pos_enc   	0                             	<class 'int'>       
+arch_mode 	fpn                           	<class 'str'>       
+ot_continous	False                         	<class 'bool'>      
+ot_iter   	10                            	<class 'int'>       
+ot_eps    	1                             	<class 'int'>       
+rt        	True                          	<class 'bool'>      
+max_h     	864                           	<class 'int'>       
+max_w     	1152                          	<class 'int'>       
+use_raw_train	False                         	<class 'bool'>      
+mono      	False                         	<class 'bool'>      
+lr_scheduler	MS                            	<class 'str'>       
+ASFF      	False                         	<class 'bool'>      
+attn_temp 	2                             	<class 'int'>       
+########################################################################
+start at epoch 0
+Number of model parameters: 12325049
+Let's use 1 GPUs!
+dataset train metas: 16000
+dataset test metas: 80
+Epoch 0:
