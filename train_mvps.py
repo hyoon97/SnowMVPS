@@ -407,8 +407,9 @@ if __name__ == '__main__':
     model.to(device)
     model_loss = MVS4net_loss
 
-    optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, betas=(0.9, 0.999), weight_decay=args.wd)
-
+    # optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, betas=(0.9, 0.999), weight_decay=args.wd)
+    optimizer = optim.Adam(list(model.parameters()) + list(ps_model.parameters()), lr=args.lr, betas=(0.9, 0.999), weight_decay=args.wd)
+    
     # load parameters
     start_epoch = 0
     if args.resume:
