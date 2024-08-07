@@ -1,4 +1,5 @@
-import argparse, os, time, sys, gc, cv2
+import os
+import argparse, time, sys, gc, cv2
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -8,7 +9,10 @@ import torch.nn.functional as F
 import numpy as np
 from datasets import find_dataset_def
 from models import *
+from models.SDPS_Net4 import NENet
+
 from utils import *
+from utils.utils import *
 from datasets.data_io import read_pfm, save_pfm
 from plyfile import PlyData, PlyElement
 from PIL import Image
@@ -19,6 +23,7 @@ import signal
 
 cudnn.benchmark = True
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
+os.environ['CUDA_DEVICE_VISIBLE'] = '2'
 
 parser = argparse.ArgumentParser(description='Predict depth, filter, and fuse')
 parser.add_argument('--model', default='mvsnet', help='select model')
@@ -35,10 +40,15 @@ parser.add_argument('--outdir', default='./outputs', help='output dir')
 
 parser.add_argument('--share_cr', action='store_true', help='whether share the cost volume regularization')
 
-parser.add_argument('--ndepths', type=str, default="8,8,4,4", help='ndepths')
+#PS Model
+parser.add_argument('--ps_fuse_type', default='max', type=str)
+parser.add_argument('--ps_feat_chs', type=int, default=16)
+parser.add_argument('--ps_loadckpt', default='/ssd3/hsy/SnowMVPS/checkpoints/mvpsnet_pretrained.ckpt')
+
+parser.add_argument('--ndepths', type=str, default="48,32,8", help='ndepths')
 parser.add_argument('--depth_inter_r', type=str, default="0.5,0.5,0.5,1", help='depth_intervals_ratio')
 
-parser.add_argument('--num_light', type=int, default=20)
+parser.add_argument('--num_light', type=int, default=10)
 parser.add_argument('--interval_scale', type=float, required=True, help='the depth interval scale')
 parser.add_argument('--num_view', type=int, default=5, help='num of view')
 parser.add_argument('--max_h', type=int, default=1200, help='testing max h')
@@ -62,7 +72,8 @@ parser.add_argument('--reg_mode', type=str, default="reg2d")
 parser.add_argument('--dlossw', type=str, default="1,1,1,1", help='depth loss weight for different stage')
 parser.add_argument('--resume', action='store_true', help='continue to train the model')
 parser.add_argument('--group_cor', action='store_true',help='group correlation')
-parser.add_argument('--group_cor_dim', type=str, default="8,8,4,4", help='group correlation dim')
+# parser.add_argument('--group_cor_dim', type=str, default="8,8,4,4", help='group correlation dim')
+parser.add_argument('--group_cor_dim', type=str, default="64,32,16", help='group correlation dim')
 parser.add_argument('--inverse_depth', action='store_true',help='inverse depth')
 parser.add_argument('--agg_type', type=str, default="ConvBnReLU3D", help='cost regularization type')
 parser.add_argument('--dcn', action='store_true',help='dcn')
@@ -180,8 +191,11 @@ def save_scene_depth(testlist):
     test_dataset = MVSDataset(args.testpath, "test", args.num_view, args.numdepth, args.num_light, use_sdps=args.use_sdps)
     TestImgLoader = DataLoader(test_dataset, args.batch_size, shuffle=False, num_workers=4, drop_last=False)
 
+    # ps_model 
+    ps_model = NENet(base_chs=args.ps_feat_chs, fuse_type=args.ps_fuse_type, c_in=6)
+    
     # model
-    model = MVS4net(arch_mode=args.arch_mode, reg_net=args.reg_mode, num_stage=4, 
+    model = MVS4net(arch_mode=args.arch_mode, reg_net=args.reg_mode, num_stage=3, 
                     fpn_base_channel=args.fpn_base_channel, reg_channel=args.reg_channel, 
                     stage_splits=[int(n) for n in args.ndepths.split(",")], 
                     depth_interals_ratio=[float(ir) for ir in args.depth_inter_r.split(",")],
@@ -195,13 +209,19 @@ def save_scene_depth(testlist):
                     vis_ETA=args.vis_ETA,
                     vis_mono=args.vis_mono
                 )
+    
     # load checkpoint file specified by args.loadckpt
     print("loading model {}".format(args.loadckpt))
     state_dict = torch.load(args.loadckpt, map_location=torch.device("cpu"))
-    model.load_state_dict(state_dict['model'], strict=True)
+    
+    model.load_state_dict(state_dict['mvs_model'], strict=True)
+    ps_model.load_state_dict(state_dict['ps_model'], strict=True)
     model = nn.DataParallel(model)
+    ps_model = nn.DataParallel(ps_model)
     model.cuda()
     model.eval()
+    ps_model.cuda()
+    ps_model.eval()
     
     total_time = 0
     with torch.no_grad():
@@ -209,7 +229,13 @@ def save_scene_depth(testlist):
             sample_cuda = tocuda(sample)
             start_time = time.time()
             
-            outputs = model(sample_cuda["imgs"], sample_cuda["R"], sample_cuda["proj_matrices"], sample_cuda["depth_values"], sample["filename"])
+            ps_outputs = {}
+            feats, ps_outputs['normal'] = ps_model(sample_cuda)
+            normal_est = ps_outputs['normal'] # all views
+            
+            # outputs = model(sample_cuda["imgs"], feats, sample_cuda["R"], sample_cuda["proj_matrices"], sample_cuda["depth_values"], sample["filename"])
+            outputs = model(sample_cuda["imgs"], feats, sample_cuda["R"], sample_cuda["proj_matrices"], sample_cuda["depth_values"], normal_est[:, 0])
+            
             end_time = time.time()
             total_time += end_time - start_time
             outputs = tensor2numpy(outputs)
@@ -218,8 +244,8 @@ def save_scene_depth(testlist):
 
             filenames = sample["filename"]
             cams = sample["proj_matrices"]["stage{}".format(num_stage)].numpy()
-            imgs = sample["imgs"]
-            imgs = np.transpose(imgs,(1,0,2,3,4))
+            imgs = sample["imgs"].numpy()
+            # imgs = np.transpose(imgs,(1,0,2,3,4))
 
             depth_values = sample["depth_values"].numpy()
             print('Iter {}/{}, Time:{} Res:{}'.format(batch_idx, len(TestImgLoader), end_time - start_time, imgs[0].shape))
@@ -230,7 +256,8 @@ def save_scene_depth(testlist):
                                                             outputs["depth"], outputs["normal_plane"], outputs["photometric_confidence"],outputs["weight"],outputs["val"]):
                 #imgs = img.numpy()
                 imgs = img.copy()
-                img = img[0]  #ref view
+                # img = img[0]  #ref view
+                img = img[0, 0]  #ref view
                 cam = cam[0]  #ref cam
                 depth_filename = os.path.join(args.outdir, filename.format('depth_est', '.pfm'))
                 confidence_filename = os.path.join(args.outdir, filename.format('confidence', '.pfm'))
@@ -271,8 +298,8 @@ def save_scene_depth(testlist):
                 cv2.imwrite(normal_filename[:-3]+"jpg", normal_est)
                 
                 #save confidence maps
-                confidence_list = [outputs['stage{}'.format(i)]['photometric_confidence'].squeeze(0) for i in range(1,5)]
-                val_vol_list = [outputs['stage{}'.format(i)]['valid_volume'].squeeze(0) for i in range(1,5)]
+                confidence_list = [outputs['stage{}'.format(i)]['photometric_confidence'].squeeze(0) for i in range(1,4)]
+                val_vol_list = [outputs['stage{}'.format(i)]['valid_volume'].squeeze(0) for i in range(1,4)]
 
                 photometric_confidence = confidence_list[-1]  # H W
                 val = np.mean(val_vol_list[-1], axis = 0)/4.0
