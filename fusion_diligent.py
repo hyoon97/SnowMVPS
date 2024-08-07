@@ -43,7 +43,7 @@ else:
     LOGGER = ConsoleLogger(phase='eval', abs_logdir=logdir)
 
 LOGGER.info(f"argv: {sys.argv[1:]}")
-log_args(args, LOGGER)
+# log_args(args, LOGGER)
 
 
 # read an image

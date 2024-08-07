@@ -232,21 +232,32 @@ class MVSDataset(Dataset):
 
         proj_matrices = np.stack(proj_matrices)
 
-        stage1_pjmats = proj_matrices.copy()
-        stage1_pjmats[:, 1, :2, :] = proj_matrices[:, 1, :2, :] / 8.0
-        stage2_pjmats = proj_matrices.copy()
-        stage2_pjmats[:, 1, :2, :] = proj_matrices[:, 1, :2, :] / 4.0
-        stage3_pjmats = proj_matrices.copy()
-        stage3_pjmats[:, 1, :2, :] = proj_matrices[:, 1, :2, :] / 2.0
+        # stage1_pjmats = proj_matrices.copy()
+        # stage1_pjmats[:, 1, :2, :] = proj_matrices[:, 1, :2, :] / 8.0
+        # stage2_pjmats = proj_matrices.copy()
+        # stage2_pjmats[:, 1, :2, :] = proj_matrices[:, 1, :2, :] / 4.0
+        # stage3_pjmats = proj_matrices.copy()
+        # stage3_pjmats[:, 1, :2, :] = proj_matrices[:, 1, :2, :] / 2.0
         
-        rotation_matrices = np.stack(rotation_matrices)
+        # proj_matrices_ms = {
+        #     "stage1": stage1_pjmats,
+        #     "stage2": stage2_pjmats,
+        #     "stage3": stage3_pjmats,
+        #     "stage4": proj_matrices,
+        # }
+        
+        stage1_pjmats = proj_matrices.copy()
+        stage1_pjmats[:, 1, :2, :] = proj_matrices[:, 1, :2, :] / 4.0
+        stage2_pjmats = proj_matrices.copy()
+        stage2_pjmats[:, 1, :2, :] = proj_matrices[:, 1, :2, :] / 2.0
         
         proj_matrices_ms = {
             "stage1": stage1_pjmats,
             "stage2": stage2_pjmats,
-            "stage3": stage3_pjmats,
-            "stage4": proj_matrices,
+            "stage3": proj_matrices,
         }
+        
+        rotation_matrices = np.stack(rotation_matrices)
         
         imgs = np.stack(imgs)
         

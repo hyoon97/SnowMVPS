@@ -287,7 +287,7 @@ def save_scene_depth(testlist):
                 
                 #save depth maps
                 save_pfm(depth_filename, depth_est)
-                plt.imsave(depth_filename[:-3]+".jpg", depth_est, cmap="plasma", vmin=depth_values[0,0], vmax=depth_values[0,-1])
+                plt.imsave(depth_filename[:-3]+"jpg", depth_est, cmap="plasma", vmin=depth_values[0,0], vmax=depth_values[0,-1])
                 normal_est = normal_est.transpose((1,2,0))
 
                 #save_pfm(normal_filename, normal_est)
@@ -302,7 +302,7 @@ def save_scene_depth(testlist):
                 val_vol_list = [outputs['stage{}'.format(i)]['valid_volume'].squeeze(0) for i in range(1,4)]
 
                 photometric_confidence = confidence_list[-1]  # H W
-                val = np.mean(val_vol_list[-1], axis = 0)/4.0
+                val = np.mean(val_vol_list[-1], axis = 0)
                 w_val = val + 0.0
                 w_val[val == 0] = 0.0
                 photometric_confidence[val == 0] = 0.0
