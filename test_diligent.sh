@@ -8,7 +8,7 @@ DTU_LOG_DIR="./checkpoints/mvps/"$exp
 if [ ! -d $DTU_LOG_DIR ]; then
     mkdir -p $DTU_LOG_DIR
 fi
-DTU_CKPT_FILE=$DTU_LOG_DIR"1.ckpt"
+DTU_CKPT_FILE=$DTU_LOG_DIR"2.ckpt"
 DTU_OUT_DIR="./outputs/diligent_mv/"$exp
 
 
