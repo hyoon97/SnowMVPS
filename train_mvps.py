@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import os
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 import argparse, sys, time, gc, datetime
 import torch
 import torch.nn as nn
@@ -116,7 +116,7 @@ def train(model, ps_model, model_loss, optimizer, TrainImgLoader, TestImgLoader,
         progress_bar = tqdm(total=len(TrainImgLoader))
         progress_bar.set_description(f"Epoch: {epoch_idx}")
 
-        # training
+        ### training
         for batch_idx, sample in enumerate(TrainImgLoader):
             global_step = len(TrainImgLoader) * epoch_idx + batch_idx
             do_summary = global_step % args.summary_freq == 0
@@ -143,7 +143,7 @@ def train(model, ps_model, model_loss, optimizer, TrainImgLoader, TestImgLoader,
 
         progress_bar.close()
 
-        # checkpoint
+        ### checkpoint
         if (not is_distributed) or (dist.get_rank() == 0):
             if (epoch_idx + 1) % args.save_freq == 0:
                 if epoch_idx == args.epochs - 1:
@@ -163,7 +163,7 @@ def train(model, ps_model, model_loss, optimizer, TrainImgLoader, TestImgLoader,
                     
         gc.collect()
 
-        # testing
+        ### testing
         if (epoch_idx % args.eval_freq == 0) or (epoch_idx == args.epochs - 1):
             avg_test_scalars = DictAverageMeter()
             for batch_idx, sample in enumerate(TestImgLoader):

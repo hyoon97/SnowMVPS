@@ -88,6 +88,9 @@ def save_images(logger, mode, images_dict, global_step):
         if len(img.shape) == 3:
             img = img[:, np.newaxis, :, :]
         img = torch.from_numpy(img[:1])
+        if img.dtype == torch.bool:
+            img = img.float()
+        
         return vutils.make_grid(img, padding=0, nrow=1, normalize=True, scale_each=True)
 
     for key, value in images_dict.items():

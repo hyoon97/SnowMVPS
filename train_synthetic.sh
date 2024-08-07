@@ -18,6 +18,6 @@ DTU_OUT_DIR="./outputs/mvps/"$exp
 # python -m torch.distributed.launch --nproc_per_node=1 train_mvps.py --logdir $DTU_LOG_DIR --dataset=general_eval4_synthetic_ps --batch_size=16 --trainpath=$DTU_TRAINING --summary_freq 100 \
 #                 --group_cor --rt --inverse_depth --trainlist $DTU_TRAINLIST --testlist $DTU_TESTLIST  $PY_ARGS | tee -a $DTU_LOG_DIR/log.txt
 
-python train_mvps.py --logdir $DTU_LOG_DIR --dataset=general_eval4_synthetic_ps --batch_size=16 --trainpath=$DTU_TRAINING --summary_freq 100 \
+python train_mvps.py --logdir $DTU_LOG_DIR --dataset=general_eval4_synthetic_ps --batch_size=2 --trainpath=$DTU_TRAINING --summary_freq 100 \
                 --group_cor --rt --inverse_depth --trainlist $DTU_TRAINLIST --testlist $DTU_TESTLIST  $PY_ARGS | tee -a $DTU_LOG_DIR/log.txt
 
