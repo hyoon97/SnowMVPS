@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import os
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 import argparse, sys, time, gc, datetime
 import torch
 import torch.nn as nn
@@ -23,7 +23,7 @@ parser = argparse.ArgumentParser(description='A PyTorch Implementation of MVSTER
 parser.add_argument('--mode', default='train', help='train or test', choices=['train', 'test', 'profile'])
 parser.add_argument('--device', default='cuda', help='select model')
 
-parser.add_argument('--dataset', default='general_eval4_synthetic_ps', help='select dataset')
+parser.add_argument('--dataset', default='general_eval4_synthetic_ps_stage4', help='select dataset')
 parser.add_argument('--trainpath', default='/ssd3/hsy/Dataset/MVPS_dataset_2022b_vulcan/', help='train datapath')
 parser.add_argument('--testpath', help='test datapath')
 parser.add_argument('--trainlist', default='/ssd3/hsy/Dataset/MVPS_dataset_2022b_vulcan/synthetic_pairs.txt', help='train list')
@@ -57,7 +57,7 @@ parser.add_argument('--ps_feat_chs', type=int, default=16)
 parser.add_argument('--ps_loadckpt', default='/ssd3/hsy/SnowMVPS/checkpoints/mvpsnet_pretrained.ckpt')
 
 # MVS model
-parser.add_argument('--ndepths', type=str, default="8,8,4", help='ndepths')
+parser.add_argument('--ndepths', type=str, default="8,8,4,4", help='ndepths')
 # parser.add_argument('--ndepths', type=str, default="48,32,8", help='ndepths')
 parser.add_argument('--depth_inter_r', type=str, default="0.5,0.5,0.5,1", help='depth_intervals_ratio')
 parser.add_argument('--dlossw', type=str, default="1,1,1,1", help='depth loss weight for different stage')
@@ -69,7 +69,7 @@ parser.add_argument('--reg_mode', type=str, default="reg2d")
 
 parser.add_argument('--group_cor', default=True, action='store_true',help='group correlation')
 # parser.add_argument('--group_cor_dim', type=str, default="64,32,16", help='group correlation dim')
-parser.add_argument('--group_cor_dim', type=str, default="8,8,4", help='group correlation dim')
+parser.add_argument('--group_cor_dim', type=str, default="8,8,4,4", help='group correlation dim')
 
 parser.add_argument('--inverse_depth', default=True, action='store_true',help='inverse depth')
 parser.add_argument('--agg_type', type=str, default="ConvBnReLU3D", help='cost regularization type')
@@ -232,7 +232,7 @@ def train_sample(model, ps_model, model_loss, optimizer, sample, args):
     depth_est = outputs["depth"]
 
     loss, stage_d_loss, normal_loss, range_err_ratio = model_loss(sample_cuda["depth_values"], outputs, normal_est,
-                                        depth_gt_ms, mask_ms, sample_cuda['normals']['stage3'],
+                                        depth_gt_ms, mask_ms, sample_cuda['normals']['stage4'],
                                         stage_lw=[float(e) for e in args.dlossw.split(",") if e], 
                                         l1ce_lw=[float(lw) for lw in args.l1ce_lw.split(",")],
                                         inverse_depth=args.inverse_depth,
@@ -264,7 +264,7 @@ def train_sample(model, ps_model, model_loss, optimizer, sample, args):
     image_outputs = {"depth_est": depth_est_nor,
                     #  "depth_est_nomask": depth_est_nomask_nor,
                      "depth_gt": depth_gt_nor,
-                     "normal_gt": sample['normals']['stage3'][:, 0], # reference view
+                     "normal_gt": sample['normals']['stage4'][:, 0], # reference view
                      "normal_est": normal_est[:, 0] * mask_ref.unsqueeze(1), # reference view
                      "ref_img": sample["imgs"][0],
                      "mask": mask_ref,
@@ -310,7 +310,7 @@ def test_sample_depth(model, ps_model, model_loss, sample, args):
     fmask = mask*re_mask
     
     loss, stage_d_loss, normal_loss, range_err_ratio = model_loss(sample_cuda["depth_values"], outputs, normal_est,
-                                        depth_gt_ms, mask_ms, sample_cuda['normals']['stage3'],
+                                        depth_gt_ms, mask_ms, sample_cuda['normals']['stage4'],
                                         stage_lw=[float(e) for e in args.dlossw.split(",") if e], 
                                         l1ce_lw=[float(lw) for lw in args.l1ce_lw.split(",")],
                                         inverse_depth=args.inverse_depth,
@@ -340,7 +340,7 @@ def test_sample_depth(model, ps_model, model_loss, sample, args):
     image_outputs = {"depth_est": depth_est_nor,
                     #  "depth_est_nomask": depth_est_nomask_nor,
                      "depth_gt": depth_gt_nor,
-                     "normal_gt": sample['normals']['stage3'][:, 0], # reference view
+                     "normal_gt": sample['normals']['stage4'][:, 0], # reference view
                      "normal_est": normal_est[:, 0] * mask.unsqueeze(1), # reference view
                      "ref_img": sample["imgs"][0],
                      "mask": mask,
@@ -391,7 +391,7 @@ if __name__ == '__main__':
     ps_model.to(device)
     
     # model, optimizer
-    model = MVS4net(arch_mode=args.arch_mode, reg_net=args.reg_mode, num_stage=3, 
+    model = MVS4net(arch_mode=args.arch_mode, reg_net=args.reg_mode, num_stage=4, 
                     fpn_base_channel=args.fpn_base_channel, reg_channel=args.reg_channel, 
                     stage_splits=[int(n) for n in args.ndepths.split(",")], 
                     depth_interals_ratio=[float(ir) for ir in args.depth_inter_r.split(",")],
@@ -454,7 +454,7 @@ if __name__ == '__main__':
     # # load pretrained ps_model
     if args.loadckpt is None:
         ps_model_param = torch.load(args.ps_loadckpt)
-        ps_model.load_state_dict(ps_model_param['ps_model'])
+        ps_model.load_state_dict(ps_model_param['ps_model'], strict=False)
 
     # dataset, dataloader
     MVSDataset = find_dataset_def(args.dataset)

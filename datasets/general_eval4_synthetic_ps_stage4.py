@@ -450,15 +450,15 @@ class MVSDataset(Dataset):
                     shadow = np.dot(normal_reshaped, light_dir)
 
                     # Reshape shadow maps back to H x W x 3
-                    shadow = shadow.reshape(H, W, 1)
+                    shadow = shadow.reshape(H, W)
 
                     # Set negative values to zero (indicating shadow regions)
                     shadow[shadow < 0] = 0
                     shadows = self.make_scales_stage4(shadow, normalized=False, axis=2)
-                    shadows_stage1.append(shadows[0])
-                    shadows_stage2.append(shadows[1])
-                    shadows_stage3.append(shadows[2])
-                    shadows_stage4.append(shadows[3])
+                    shadows_stage1.append(shadows[0][..., None])
+                    shadows_stage2.append(shadows[1][..., None])
+                    shadows_stage3.append(shadows[2][..., None])
+                    shadows_stage4.append(shadows[3][..., None])
 
                     view_dir = -np.array([0, 0, 1])
 
@@ -475,13 +475,13 @@ class MVSDataset(Dataset):
                     specular_intensity = np.dot(reflection_vector, view_dir)
                     specular_intensity = np.maximum(specular_intensity, 0)  # Clamp negative values to 0
                     specular = np.power(specular_intensity, shininess)
-                    specular = specular.reshape(H, W, 1)
+                    specular = specular.reshape(H, W)
 
                     speculars = self.make_scales_stage4(specular, normalized=False, axis=2)
-                    speculars_stage1.append(speculars[0])
-                    speculars_stage2.append(speculars[1])
-                    speculars_stage3.append(speculars[2])
-                    speculars_stage4.append(speculars[3])
+                    speculars_stage1.append(speculars[0][..., None])
+                    speculars_stage2.append(speculars[1][..., None])
+                    speculars_stage3.append(speculars[2][..., None])
+                    speculars_stage4.append(speculars[3][..., None])
                     ###########################################
 
         imgs = np.stack(imgs)  # (V, L, 3, H, W)
