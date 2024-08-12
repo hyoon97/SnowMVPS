@@ -274,7 +274,7 @@ def MVS4net_loss(depth_values, inputs, normal_est, depth_gt_ms, mask_ms, normal_
         range_err_ratio.append(mask_out_of_range[omask[:, 0]].float().mean()) # reference view
         
 
-        if stage_idx == 2:    
+        if stage_idx == 3:    
             normal_loss += F.smooth_l1_loss(normal_est[normal_mask], normal_gt[normal_mask], reduction='mean')
             total_loss = total_loss + stage_lw[stage_idx] * pw_loss + stage_lw[stage_idx] * normal_loss
         else:

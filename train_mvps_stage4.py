@@ -458,7 +458,7 @@ if __name__ == '__main__':
     # # load pretrained ps_model
     if args.loadckpt is None:
         ps_model_param = torch.load(args.ps_loadckpt)
-        ps_model.load_state_dict(ps_model_param['ps_model'])
+        ps_model.load_state_dict(ps_model_param['ps_model'], strict=False)
 
     # dataset, dataloader
     MVSDataset = find_dataset_def(args.dataset)

@@ -81,46 +81,59 @@ class FeatExtractor(nn.Module):
         # base_chs*2->base_chs*4
         self.conv9 = nn.Sequential(
             nn.Conv2d(base_chs * 4, base_chs * 8, kernel_size=3, stride=2, padding=1, bias=use_bias),
-            nn.BatchNorm2d(base_chs*4),
+            nn.BatchNorm2d(base_chs*8),
             nn.ReLU(True)
         )
         self.conv10 = ResnetBlock(base_chs*8, 'zero', use_dropout, use_bias)
         self.conv11 = ResnetBlock(base_chs*8, 'zero', use_dropout, use_bias)
 
-        self.out1 = nn.Conv2d(base_chs*8, base_chs*8, 1, bias=False)
+        
+        self.out4 = nn.Conv2d(base_chs*8, base_chs*8, 1, bias=False)
         self.out_channels = [base_chs*8]
-
-        # base_chs*4->base_chs*2
-        self.deconv1 = nn.Sequential(
+                
+        self.deconv7 = nn.Sequential(
             nn.ConvTranspose2d(base_chs*8, base_chs*4, kernel_size=3, stride=2, padding=1, output_padding=1, bias=use_bias),
             nn.BatchNorm2d(base_chs*4),
             nn.ReLU(True)
         )
-        self.deconv2 = ResnetBlock(base_chs*4, 'zero', use_dropout, use_bias)
-        self.deconv3 = ResnetBlock(base_chs*4, 'zero', use_dropout, use_bias)
-        self.out2 = nn.Conv2d(base_chs*4, base_chs*4, 1, bias=False)
+        self.deconv8 = ResnetBlock(base_chs*4, 'zero', use_dropout, use_bias)
+        self.deconv9 = ResnetBlock(base_chs*4, 'zero', use_dropout, use_bias)
+        
+        self.out1 = nn.Conv2d(base_chs*4, base_chs*4, 1, bias=False)
+        self.out_channels.append(base_chs*4)
+        # self.out_channels = [base_chs*4]
+
+        # base_chs*4->base_chs*2
+        self.deconv1 = nn.Sequential(
+            nn.ConvTranspose2d(base_chs*4, base_chs*2, kernel_size=3, stride=2, padding=1, output_padding=1, bias=use_bias),
+            nn.BatchNorm2d(base_chs*2),
+            nn.ReLU(True)
+        )
+        self.deconv2 = ResnetBlock(base_chs*2, 'zero', use_dropout, use_bias)
+        self.deconv3 = ResnetBlock(base_chs*2, 'zero', use_dropout, use_bias)
+        self.out2 = nn.Conv2d(base_chs*2, base_chs*2, 1, bias=False)
         self.out_channels.append(2 * base_chs)
 
         # base_chs*2->base_chs
         self.deconv4 = nn.Sequential(
-            nn.ConvTranspose2d(base_chs*4, base_chs*2, kernel_size=3, stride=2, padding=1, output_padding=1, bias=use_bias),
-            nn.BatchNorm2d(base_chs),
-            nn.ReLU(True)
-        )
-        self.deconv5 = ResnetBlock(base_chs*2, 'zero', use_dropout, use_bias)
-        self.deconv6 = ResnetBlock(base_chs*2, 'zero', use_dropout, use_bias)
-        self.out3 = nn.Conv2d(base_chs*2, base_chs*2, 1, bias=False)
-        self.out_channels.append(base_chs*2)
-        
-        self.deconv7 = nn.Sequential(
             nn.ConvTranspose2d(base_chs*2, base_chs, kernel_size=3, stride=2, padding=1, output_padding=1, bias=use_bias),
             nn.BatchNorm2d(base_chs),
             nn.ReLU(True)
         )
-        self.deconv8 = ResnetBlock(base_chs, 'zero', use_dropout, use_bias)
-        self.deconv9 = ResnetBlock(base_chs, 'zero', use_dropout, use_bias)
-        self.out4 = nn.Conv2d(base_chs, base_chs, 1, bias=False)
+        self.deconv5 = ResnetBlock(base_chs, 'zero', use_dropout, use_bias)
+        self.deconv6 = ResnetBlock(base_chs, 'zero', use_dropout, use_bias)
+        self.out3 = nn.Conv2d(base_chs, base_chs, 1, bias=False)
         self.out_channels.append(base_chs)
+        
+        # self.deconv7 = nn.Sequential(
+        #     nn.ConvTranspose2d(base_chs*8, base_chs*4, kernel_size=3, stride=2, padding=1, output_padding=1, bias=use_bias),
+        #     nn.BatchNorm2d(base_chs),
+        #     nn.ReLU(True)
+        # )
+        # self.deconv8 = ResnetBlock(base_chs*4, 'zero', use_dropout, use_bias)
+        # self.deconv9 = ResnetBlock(base_chs*4, 'zero', use_dropout, use_bias)
+        # self.out4 = nn.Conv2d(base_chs*4, base_chs*4, 1, bias=False)
+        # self.out_channels.append(base_chs*4)
 
 
     def forward(self, x):
@@ -138,29 +151,29 @@ class FeatExtractor(nn.Module):
         out = self.conv11(out)
 
         outputs = {}
+        out4 = self.out4(out)
+        outputs['stage1'] = out4
+
+        out = self.deconv7(out)
+        out = self.deconv8(out)
+        out = self.deconv9(out)
+
         out1 = self.out1(out)
-        outputs['stage1'] = out1
+        outputs['stage2'] = out1
 
         out = self.deconv1(out)
         out = self.deconv2(out)
         out = self.deconv3(out)
 
         out2 = self.out2(out)
-        outputs['stage2'] = out2
-
+        outputs['stage3'] = out2
+        
         out = self.deconv4(out)
         out = self.deconv5(out)
         out = self.deconv6(out)
 
         out3 = self.out3(out)
-        outputs['stage3'] = out3
-        
-        out = self.deconv7(out)
-        out = self.deconv8(out)
-        out = self.deconv9(out)
-
-        out4 = self.out3(out)
-        outputs['stage4'] = out4
+        outputs['stage4'] = out3
         
         return outputs, out
 
