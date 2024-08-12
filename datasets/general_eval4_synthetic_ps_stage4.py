@@ -231,11 +231,25 @@ class MVSDataset(Dataset):
         albedos_stage2 = []
         albedos_stage3 = []
         roughnesses = []
+        
         normals_stage1 = []
         normals_stage2 = []
         normals_stage3 = []
         normals_stage4 = []
+        
         light_dirs = []
+
+        ###########################################
+        shadows_stage1 = []
+        shadows_stage2 = []
+        shadows_stage3 = []
+        shadows_stage4 = []
+
+        speculars_stage1 = []
+        speculars_stage2 = []
+        speculars_stage3 = []
+        speculars_stage4 = []
+        ###########################################
 
         rotation_matrices = []
         
@@ -424,6 +438,52 @@ class MVSDataset(Dataset):
                     light_dirs.append(view_lights)
 
 
+                ###########################################
+                if len(light_dirs) > 0 and len(normals_stage1) > 0:
+                    H, W, _ = normal.shape
+                    normal_reshaped = normal.reshape(-1, 3)
+
+                    light_dir = light_dir / np.linalg.norm(light_dir)
+                    light_dir = light_dir[..., None]
+
+                    # Calculate dot product between each normal and each light direction
+                    shadow = np.dot(normal_reshaped, light_dir)
+
+                    # Reshape shadow maps back to H x W x 3
+                    shadow = shadow.reshape(H, W, 1)
+
+                    # Set negative values to zero (indicating shadow regions)
+                    shadow[shadow < 0] = 0
+                    shadows = self.make_scales_stage4(shadow, normalized=False, axis=2)
+                    shadows_stage1.append(shadows[0])
+                    shadows_stage2.append(shadows[1])
+                    shadows_stage3.append(shadows[2])
+                    shadows_stage4.append(shadows[3])
+
+                    view_dir = -np.array([0, 0, 1])
+
+                    # Calculate reflection vector: R = 2(N • L)N - L
+                    dot_nl = np.dot(normal_reshaped, light_dir)
+                    reflection_vector = 2 * dot_nl * normal_reshaped - light_dir.T
+                    
+                    # Normalize reflection vector
+                    reflection_vector = reflection_vector / np.linalg.norm(reflection_vector, axis=1, keepdims=True)
+                    
+                    shininess = 32
+
+                    # Calculate specular intensity: (R • V)^shininess
+                    specular_intensity = np.dot(reflection_vector, view_dir)
+                    specular_intensity = np.maximum(specular_intensity, 0)  # Clamp negative values to 0
+                    specular = np.power(specular_intensity, shininess)
+                    specular = specular.reshape(H, W, 1)
+
+                    speculars = self.make_scales_stage4(specular, normalized=False, axis=2)
+                    speculars_stage1.append(speculars[0])
+                    speculars_stage2.append(speculars[1])
+                    speculars_stage3.append(speculars[2])
+                    speculars_stage4.append(speculars[3])
+                    ###########################################
+
         imgs = np.stack(imgs)  # (V, L, 3, H, W)
         
         # proj_matrices = np.stack(proj_matrices)
@@ -523,5 +583,32 @@ class MVSDataset(Dataset):
 
         if self.load_intrinsics:
             sample['intrinsics'] = ref_intrinsics
+            
+        ###########################################
+        if len(light_dirs) > 0 and len(shadows_stage1) > 0:
+            shadows_stage1 = np.stack(shadows_stage1).transpose(0, 3, 1, 2)
+            shadows_stage2 = np.stack(shadows_stage2).transpose(0, 3, 1, 2)
+            shadows_stage3 = np.stack(shadows_stage3).transpose(0, 3, 1, 2)
+            # normals_stage4 = np.stack(normals_stage4).transpose(0, 3, 1, 2)
+            shadows = {
+                'stage1': shadows_stage1,
+                'stage2': shadows_stage2,
+                'stage3': shadows_stage3,
+                'stage4': shadows_stage4,
+            }
+            sample['shadows'] = shadows  # dict, (nviews, 3, h//4, w//4), (nviews, 3, h//2, w//2), (nviews, 3, h, w)
+    
+            speculars_stage1 = np.stack(speculars_stage1).transpose(0, 3, 1, 2)
+            speculars_stage2 = np.stack(speculars_stage2).transpose(0, 3, 1, 2)
+            speculars_stage3 = np.stack(speculars_stage3).transpose(0, 3, 1, 2)
+            # normals_stage4 = np.stack(normals_stage4).transpose(0, 3, 1, 2)
+            speculars = {
+                'stage1': speculars_stage1,
+                'stage2': speculars_stage2,
+                'stage3': speculars_stage3,
+                'stage4': speculars_stage4,
+            }
+            sample['speculars'] = speculars  # dict, (nviews, 3, h//4, w//4), (nviews, 3, h//2, w//2), (nviews, 3, h, w)
+        ###########################################
 
         return sample

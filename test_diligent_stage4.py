@@ -1,4 +1,7 @@
 import os
+os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
+os.environ['CUDA_DEVICE_VISIBLE'] = '3'
+
 import argparse, time, sys, gc, cv2
 import torch
 import torch.nn as nn
@@ -22,8 +25,7 @@ from functools import partial
 import signal
 
 cudnn.benchmark = True
-os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
-os.environ['CUDA_DEVICE_VISIBLE'] = '2'
+
 
 parser = argparse.ArgumentParser(description='Predict depth, filter, and fuse')
 parser.add_argument('--model', default='mvsnet', help='select model')
@@ -45,11 +47,11 @@ parser.add_argument('--ps_fuse_type', default='max', type=str)
 parser.add_argument('--ps_feat_chs', type=int, default=16)
 parser.add_argument('--ps_loadckpt', default='/ssd3/hsy/SnowMVPS/checkpoints/mvpsnet_pretrained.ckpt')
 
-parser.add_argument('--ndepths', type=str, default="8,8,4", help='ndepths')
+parser.add_argument('--ndepths', type=str, default="8,8,4,4", help='ndepths')
 # parser.add_argument('--ndepths', type=str, default="48,32,8", help='ndepths')
 parser.add_argument('--depth_inter_r', type=str, default="0.5,0.5,0.5,1", help='depth_intervals_ratio')
 
-parser.add_argument('--num_light', type=int, default=10)
+parser.add_argument('--num_light', type=int, default=8)
 parser.add_argument('--interval_scale', type=float, required=True, help='the depth interval scale')
 parser.add_argument('--num_view', type=int, default=5, help='num of view')
 parser.add_argument('--max_h', type=int, default=1200, help='testing max h')
@@ -73,7 +75,7 @@ parser.add_argument('--reg_mode', type=str, default="reg2d")
 parser.add_argument('--dlossw', type=str, default="1,1,1,1", help='depth loss weight for different stage')
 parser.add_argument('--resume', action='store_true', help='continue to train the model')
 parser.add_argument('--group_cor', action='store_true',help='group correlation')
-parser.add_argument('--group_cor_dim', type=str, default="8,8,4", help='group correlation dim')
+parser.add_argument('--group_cor_dim', type=str, default="8,8,4,4", help='group correlation dim')
 # parser.add_argument('--group_cor_dim', type=str, default="64,32,16", help='group correlation dim')
 parser.add_argument('--inverse_depth', action='store_true',help='inverse depth')
 parser.add_argument('--agg_type', type=str, default="ConvBnReLU3D", help='cost regularization type')
@@ -196,7 +198,7 @@ def save_scene_depth(testlist):
     ps_model = NENet(base_chs=args.ps_feat_chs, fuse_type=args.ps_fuse_type, c_in=6)
     
     # model
-    model = MVS4net(arch_mode=args.arch_mode, reg_net=args.reg_mode, num_stage=3, 
+    model = MVS4net(arch_mode=args.arch_mode, reg_net=args.reg_mode, num_stage=4, 
                     fpn_base_channel=args.fpn_base_channel, reg_channel=args.reg_channel, 
                     stage_splits=[int(n) for n in args.ndepths.split(",")], 
                     depth_interals_ratio=[float(ir) for ir in args.depth_inter_r.split(",")],
