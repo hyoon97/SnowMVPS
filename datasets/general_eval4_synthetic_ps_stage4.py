@@ -454,10 +454,6 @@ class MVSDataset(Dataset):
                     # Set negative values to zero (indicating shadow regions)
                     shadow[shadow < 0] = 0
                     shadows = self.make_scales_stage4(shadow, normalized=False, axis=2)
-                    shadows_stage1.append(shadows[0])
-                    shadows_stage2.append(shadows[1])
-                    shadows_stage3.append(shadows[2])
-                    shadows_stage4.append(shadows[3])
                     shadows_stage1.append(shadows[0][..., None])
                     shadows_stage2.append(shadows[1][..., None])
                     shadows_stage3.append(shadows[2][..., None])
@@ -481,10 +477,6 @@ class MVSDataset(Dataset):
                     specular = specular.reshape(H, W)
 
                     speculars = self.make_scales_stage4(specular, normalized=False, axis=2)
-                    speculars_stage1.append(speculars[0])
-                    speculars_stage2.append(speculars[1])
-                    speculars_stage3.append(speculars[2])
-                    speculars_stage4.append(speculars[3])
                     speculars_stage1.append(speculars[0][..., None])
                     speculars_stage2.append(speculars[1][..., None])
                     speculars_stage3.append(speculars[2][..., None])
