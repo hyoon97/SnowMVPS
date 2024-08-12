@@ -1,6 +1,7 @@
 import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
-os.environ['CUDA_DEVICE_VISIBLE'] = '3'
+os.environ['CUDA_DEVICE_VISIBLE'] = '2'
 
 import argparse, time, sys, gc, cv2
 import torch
@@ -51,7 +52,7 @@ parser.add_argument('--ndepths', type=str, default="8,8,4,4", help='ndepths')
 # parser.add_argument('--ndepths', type=str, default="48,32,8", help='ndepths')
 parser.add_argument('--depth_inter_r', type=str, default="0.5,0.5,0.5,1", help='depth_intervals_ratio')
 
-parser.add_argument('--num_light', type=int, default=8)
+parser.add_argument('--num_light', type=int, default=10)
 parser.add_argument('--interval_scale', type=float, required=True, help='the depth interval scale')
 parser.add_argument('--num_view', type=int, default=5, help='num of view')
 parser.add_argument('--max_h', type=int, default=1200, help='testing max h')

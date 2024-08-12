@@ -437,7 +437,6 @@ class MVSDataset(Dataset):
                     view_lights = np.stack(view_lights)  # (L, 3)
                     light_dirs.append(view_lights)
 
-
                 ###########################################
                 if len(light_dirs) > 0 and len(normals_stage1) > 0:
                     H, W, _ = normal.shape
@@ -451,7 +450,7 @@ class MVSDataset(Dataset):
 
                     # Reshape shadow maps back to H x W x 3
                     shadow = shadow.reshape(H, W, 1)
-
+                    
                     # Set negative values to zero (indicating shadow regions)
                     shadow[shadow < 0] = 0
                     shadows = self.make_scales_stage4(shadow, normalized=False, axis=2)
@@ -586,6 +585,7 @@ class MVSDataset(Dataset):
             
         ###########################################
         if len(light_dirs) > 0 and len(shadows_stage1) > 0:
+            
             shadows_stage1 = np.stack(shadows_stage1).transpose(0, 3, 1, 2)
             shadows_stage2 = np.stack(shadows_stage2).transpose(0, 3, 1, 2)
             shadows_stage3 = np.stack(shadows_stage3).transpose(0, 3, 1, 2)
