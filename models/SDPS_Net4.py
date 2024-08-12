@@ -77,30 +77,49 @@ class FeatExtractor(nn.Module):
         )
         self.conv7 = ResnetBlock(base_chs*4, 'zero', use_dropout, use_bias)
         self.conv8 = ResnetBlock(base_chs*4, 'zero', use_dropout, use_bias)
+        
+        # base_chs*2->base_chs*4
+        self.conv9 = nn.Sequential(
+            nn.Conv2d(base_chs * 4, base_chs * 8, kernel_size=3, stride=2, padding=1, bias=use_bias),
+            nn.BatchNorm2d(base_chs*4),
+            nn.ReLU(True)
+        )
+        self.conv10 = ResnetBlock(base_chs*8, 'zero', use_dropout, use_bias)
+        self.conv11 = ResnetBlock(base_chs*8, 'zero', use_dropout, use_bias)
 
-        self.out1 = nn.Conv2d(base_chs*4, base_chs*4, 1, bias=False)
-        self.out_channels = [base_chs*4]
+        self.out1 = nn.Conv2d(base_chs*8, base_chs*8, 1, bias=False)
+        self.out_channels = [base_chs*8]
 
         # base_chs*4->base_chs*2
         self.deconv1 = nn.Sequential(
-            nn.ConvTranspose2d(base_chs*4, base_chs*2, kernel_size=3, stride=2, padding=1, output_padding=1, bias=use_bias),
-            nn.BatchNorm2d(base_chs*2),
+            nn.ConvTranspose2d(base_chs*8, base_chs*4, kernel_size=3, stride=2, padding=1, output_padding=1, bias=use_bias),
+            nn.BatchNorm2d(base_chs*4),
             nn.ReLU(True)
         )
-        self.deconv2 = ResnetBlock(base_chs*2, 'zero', use_dropout, use_bias)
-        self.deconv3 = ResnetBlock(base_chs*2, 'zero', use_dropout, use_bias)
-        self.out2 = nn.Conv2d(base_chs*2, base_chs*2, 1, bias=False)
+        self.deconv2 = ResnetBlock(base_chs*4, 'zero', use_dropout, use_bias)
+        self.deconv3 = ResnetBlock(base_chs*4, 'zero', use_dropout, use_bias)
+        self.out2 = nn.Conv2d(base_chs*4, base_chs*4, 1, bias=False)
         self.out_channels.append(2 * base_chs)
 
         # base_chs*2->base_chs
         self.deconv4 = nn.Sequential(
+            nn.ConvTranspose2d(base_chs*4, base_chs*2, kernel_size=3, stride=2, padding=1, output_padding=1, bias=use_bias),
+            nn.BatchNorm2d(base_chs),
+            nn.ReLU(True)
+        )
+        self.deconv5 = ResnetBlock(base_chs*2, 'zero', use_dropout, use_bias)
+        self.deconv6 = ResnetBlock(base_chs*2, 'zero', use_dropout, use_bias)
+        self.out3 = nn.Conv2d(base_chs*2, base_chs*2, 1, bias=False)
+        self.out_channels.append(base_chs*2)
+        
+        self.deconv7 = nn.Sequential(
             nn.ConvTranspose2d(base_chs*2, base_chs, kernel_size=3, stride=2, padding=1, output_padding=1, bias=use_bias),
             nn.BatchNorm2d(base_chs),
             nn.ReLU(True)
         )
-        self.deconv5 = ResnetBlock(base_chs, 'zero', use_dropout, use_bias)
-        self.deconv6 = ResnetBlock(base_chs, 'zero', use_dropout, use_bias)
-        self.out3 = nn.Conv2d(base_chs, base_chs, 1, bias=False)
+        self.deconv8 = ResnetBlock(base_chs, 'zero', use_dropout, use_bias)
+        self.deconv9 = ResnetBlock(base_chs, 'zero', use_dropout, use_bias)
+        self.out4 = nn.Conv2d(base_chs, base_chs, 1, bias=False)
         self.out_channels.append(base_chs)
 
 
@@ -114,6 +133,9 @@ class FeatExtractor(nn.Module):
         out = self.conv6(out)
         out = self.conv7(out)
         out = self.conv8(out)
+        out = self.conv9(out)
+        out = self.conv10(out)
+        out = self.conv11(out)
 
         outputs = {}
         out1 = self.out1(out)
@@ -132,6 +154,14 @@ class FeatExtractor(nn.Module):
 
         out3 = self.out3(out)
         outputs['stage3'] = out3
+        
+        out = self.deconv7(out)
+        out = self.deconv8(out)
+        out = self.deconv9(out)
+
+        out4 = self.out3(out)
+        outputs['stage4'] = out4
+        
         return outputs, out
 
 
@@ -184,12 +214,14 @@ class NENet(nn.Module):
         view_feats_stage1 = []
         view_feats_stage2 = []
         view_feats_stage3 = []
+        view_feats_stage4 = []
         view_normals = []
         for v in range(len(view_inputs)):
             inputs = view_inputs[v]
             feats_stage1 = torch.Tensor()
             feats_stage2 = torch.Tensor()
             feats_stage3 = torch.Tensor()
+            feats_stage4 = torch.Tensor()
             feats = torch.Tensor()
             for i in range(len(inputs)):
                 outputs_dict, out = self.extractor(inputs[i])
@@ -197,26 +229,31 @@ class NENet(nn.Module):
                     feats_stage1 = outputs_dict['stage1']
                     feats_stage2 = outputs_dict['stage2']
                     feats_stage3 = outputs_dict['stage3']
+                    feats_stage4 = outputs_dict['stage4']
                     feats = out
                 else:
                     if self.fuse_type == 'mean':
                         feats_stage1 = torch.stack([feats_stage1, outputs_dict['stage1']], 1).sum(1)
                         feats_stage2 = torch.stack([feats_stage2, outputs_dict['stage2']], 1).sum(1)
                         feats_stage3 = torch.stack([feats_stage3, outputs_dict['stage3']], 1).sum(1)
+                        feats_stage4 = torch.stack([feats_stage4, outputs_dict['stage4']], 1).sum(1)
                         feats = torch.stack([feats, out], 1).sum(1)
                     elif self.fuse_type == 'max':
                         feats_stage1, _ = torch.stack([feats_stage1, outputs_dict['stage1']], 1).max(1)
                         feats_stage2, _ = torch.stack([feats_stage2, outputs_dict['stage2']], 1).max(1)
                         feats_stage3, _ = torch.stack([feats_stage3, outputs_dict['stage3']], 1).max(1)
+                        feats_stage4, _ = torch.stack([feats_stage4, outputs_dict['stage4']], 1).max(1)
                         feats, _ = torch.stack([feats, out], 1).max(1)
             if self.fuse_type == 'mean':
                 feats_stage1 = feats_stage1 / len(inputs)
                 feats_stage2 = feats_stage2 / len(inputs)
                 feats_stage3 = feats_stage3 / len(inputs)
+                feats_stage4 = feats_stage4 / len(inputs)
                 feats = feats / len(inputs)
             view_feats_stage1.append(feats_stage1)
             view_feats_stage2.append(feats_stage2)
             view_feats_stage3.append(feats_stage3)
+            view_feats_stage4.append(feats_stage4)
 
             normal = self.regressor(feats)
             normal = torch.nn.functional.normalize(normal, 2, 1)
@@ -226,7 +263,8 @@ class NENet(nn.Module):
         view_feats = {
             'stage1': view_feats_stage1,
             'stage2': view_feats_stage2,
-            'stage3': view_feats_stage3
+            'stage3': view_feats_stage3,
+            'stage4': view_feats_stage4
         }
         # view_normals: (b, v, 3, h, w)
         return view_feats, view_normals  # dict and tensor

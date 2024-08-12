@@ -299,8 +299,8 @@ def save_scene_depth(testlist):
                 cv2.imwrite(normal_filename[:-3]+"jpg", normal_est)
                 
                 #save confidence maps
-                confidence_list = [outputs['stage{}'.format(i)]['photometric_confidence'].squeeze(0) for i in range(1,4)]
-                val_vol_list = [outputs['stage{}'.format(i)]['valid_volume'].squeeze(0) for i in range(1,4)]
+                confidence_list = [outputs['stage{}'.format(i)]['photometric_confidence'].squeeze(0) for i in range(1,5)]
+                val_vol_list = [outputs['stage{}'.format(i)]['valid_volume'].squeeze(0) for i in range(1,5)]
 
                 photometric_confidence = confidence_list[-1]  # H W
                 val = np.mean(val_vol_list[-1], axis = 0)

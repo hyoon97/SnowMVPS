@@ -12,5 +12,5 @@ DTU_CKPT_FILE=$DTU_LOG_DIR"/3.ckpt"
 DTU_OUT_DIR="./outputs/synthetic_ps/"$exp
 
 
-python test_diligent.py --dataset=general_eval4_synthetic_ps --batch_size=1 --testpath=$DTU_TESTPATH  --testlist=$DTU_TESTLIST --loadckpt $DTU_CKPT_FILE --interval_scale 1.06 --outdir $DTU_OUT_DIR\
+python test_diligent.py --dataset=general_eval4_synthetic_ps_stage4 --batch_size=1 --testpath=$DTU_TESTPATH  --testlist=$DTU_TESTLIST --loadckpt $DTU_CKPT_FILE --interval_scale 1.06 --outdir $DTU_OUT_DIR\
              --inverse_depth --group_cor | tee -a $DTU_LOG_DIR/log_test.txt

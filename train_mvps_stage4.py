@@ -57,7 +57,7 @@ parser.add_argument('--ps_feat_chs', type=int, default=16)
 parser.add_argument('--ps_loadckpt', default='/ssd3/hsy/SnowMVPS/checkpoints/mvpsnet_pretrained.ckpt')
 
 # MVS model
-parser.add_argument('--ndepths', type=str, default="8,8,4", help='ndepths')
+parser.add_argument('--ndepths', type=str, default="8,8,4,4", help='ndepths')
 # parser.add_argument('--ndepths', type=str, default="48,32,8", help='ndepths')
 parser.add_argument('--depth_inter_r', type=str, default="0.5,0.5,0.5,1", help='depth_intervals_ratio')
 parser.add_argument('--dlossw', type=str, default="1,1,1,1", help='depth loss weight for different stage')
@@ -69,7 +69,7 @@ parser.add_argument('--reg_mode', type=str, default="reg2d")
 
 parser.add_argument('--group_cor', default=True, action='store_true',help='group correlation')
 # parser.add_argument('--group_cor_dim', type=str, default="64,32,16", help='group correlation dim')
-parser.add_argument('--group_cor_dim', type=str, default="8,8,4", help='group correlation dim')
+parser.add_argument('--group_cor_dim', type=str, default="8,8,4,4", help='group correlation dim')
 
 parser.add_argument('--inverse_depth', default=True, action='store_true',help='inverse depth')
 parser.add_argument('--agg_type', type=str, default="ConvBnReLU3D", help='cost regularization type')
@@ -124,7 +124,7 @@ def train(model, ps_model, model_loss, optimizer, TrainImgLoader, TestImgLoader,
             loss, scalar_outputs, image_outputs = train_sample(model, ps_model, model_loss, optimizer, sample, args)
             lr_scheduler.step()
 
-            d_loss = (scalar_outputs["s0_d_loss"] + scalar_outputs["s1_d_loss"] + scalar_outputs["s2_d_loss"]) / 3
+            d_loss = (scalar_outputs["s0_d_loss"] + scalar_outputs["s1_d_loss"] + scalar_outputs["s2_d_loss"] + scalar_outputs["s3_d_loss"]) / 4
             n_loss = scalar_outputs["n_loss"]
             d_error = scalar_outputs["abs_depth_error"]
             # range_error = (scalar_outputs["s0_range_err_ratio"] + scalar_outputs["s1_range_err_ratio"] + scalar_outputs["s2_range_err_ratio"]) / 3
@@ -172,7 +172,7 @@ def train(model, ps_model, model_loss, optimizer, TrainImgLoader, TestImgLoader,
                 do_summary = global_step % args.summary_freq == 0
                 loss, scalar_outputs, image_outputs = test_sample_depth(model, ps_model, model_loss, sample, args)
 
-                d_loss = (scalar_outputs["s0_d_loss"] + scalar_outputs["s1_d_loss"] + scalar_outputs["s2_d_loss"]) / 3
+                d_loss = (scalar_outputs["s0_d_loss"] + scalar_outputs["s1_d_loss"] + scalar_outputs["s2_d_loss"] + scalar_outputs["s3_d_loss"]) / 4
                 n_loss = scalar_outputs["n_loss"]
                 d_error = scalar_outputs["abs_depth_error"]
                 # range_error = (scalar_outputs["s0_range_err_ratio"] + scalar_outputs["s1_range_err_ratio"] + scalar_outputs["s2_range_err_ratio"]) / 3
@@ -232,7 +232,7 @@ def train_sample(model, ps_model, model_loss, optimizer, sample, args):
     depth_est = outputs["depth"]
 
     loss, stage_d_loss, normal_loss, range_err_ratio = model_loss(sample_cuda["depth_values"], outputs, normal_est,
-                                        depth_gt_ms, mask_ms, sample_cuda['normals']['stage3'],
+                                        depth_gt_ms, mask_ms, sample_cuda['normals']['stage4'],
                                         stage_lw=[float(e) for e in args.dlossw.split(",") if e], 
                                         l1ce_lw=[float(lw) for lw in args.l1ce_lw.split(",")],
                                         inverse_depth=args.inverse_depth,
@@ -252,9 +252,11 @@ def train_sample(model, ps_model, model_loss, optimizer, sample, args):
                       "s0_d_loss": stage_d_loss[0],
                       "s1_d_loss": stage_d_loss[1],
                       "s2_d_loss": stage_d_loss[2],
+                      "s3_d_loss": stage_d_loss[3],
                       "s0_range_err_ratio":range_err_ratio[0],
                       "s1_range_err_ratio":range_err_ratio[1],
                       "s2_range_err_ratio":range_err_ratio[2],
+                      "s3_range_err_ratio":range_err_ratio[3],
                       "n_loss": normal_loss,
                       "abs_depth_error": AbsDepthError_metrics(depth_est, depth_gt, mask_ref > 0.5),
                       "thres2mm_error": Thres_metrics(depth_est, depth_gt, mask_ref > 0.5, 2),
@@ -264,7 +266,7 @@ def train_sample(model, ps_model, model_loss, optimizer, sample, args):
     image_outputs = {"depth_est": depth_est_nor,
                     #  "depth_est_nomask": depth_est_nomask_nor,
                      "depth_gt": depth_gt_nor,
-                     "normal_gt": sample['normals']['stage3'][:, 0], # reference view
+                     "normal_gt": sample['normals']['stage4'][:, 0], # reference view
                      "normal_est": normal_est[:, 0] * mask_ref.unsqueeze(1), # reference view
                      "ref_img": sample["imgs"][0],
                      "mask": mask_ref,
@@ -310,7 +312,7 @@ def test_sample_depth(model, ps_model, model_loss, sample, args):
     fmask = mask*re_mask
     
     loss, stage_d_loss, normal_loss, range_err_ratio = model_loss(sample_cuda["depth_values"], outputs, normal_est,
-                                        depth_gt_ms, mask_ms, sample_cuda['normals']['stage3'],
+                                        depth_gt_ms, mask_ms, sample_cuda['normals']['stage4'],
                                         stage_lw=[float(e) for e in args.dlossw.split(",") if e], 
                                         l1ce_lw=[float(lw) for lw in args.l1ce_lw.split(",")],
                                         inverse_depth=args.inverse_depth,
@@ -328,9 +330,11 @@ def test_sample_depth(model, ps_model, model_loss, sample, args):
                       "s0_d_loss": stage_d_loss[0],
                       "s1_d_loss": stage_d_loss[1],
                       "s2_d_loss": stage_d_loss[2],
+                      "s3_d_loss": stage_d_loss[3],
                       "s0_range_err_ratio":range_err_ratio[0],
                       "s1_range_err_ratio":range_err_ratio[1],
                       "s2_range_err_ratio":range_err_ratio[2],
+                      "s3_range_err_ratio":range_err_ratio[3],
                       "n_loss": normal_loss,
                       "abs_depth_error": AbsDepthError_metrics(depth_est, depth_gt, mask > 0.5),
                       "thres2mm_error": Thres_metrics(depth_est, depth_gt, mask > 0.5, 2),
@@ -391,7 +395,7 @@ if __name__ == '__main__':
     ps_model.to(device)
     
     # model, optimizer
-    model = MVS4net(arch_mode=args.arch_mode, reg_net=args.reg_mode, num_stage=3, 
+    model = MVS4net(arch_mode=args.arch_mode, reg_net=args.reg_mode, num_stage=4, 
                     fpn_base_channel=args.fpn_base_channel, reg_channel=args.reg_channel, 
                     stage_splits=[int(n) for n in args.ndepths.split(",")], 
                     depth_interals_ratio=[float(ir) for ir in args.depth_inter_r.split(",")],
