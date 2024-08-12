@@ -1,7 +1,6 @@
 import os
-os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
-os.environ['CUDA_DEVICE_VISIBLE'] = '2'
+os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 
 import argparse, time, sys, gc, cv2
 import torch
@@ -31,17 +30,15 @@ cudnn.benchmark = True
 parser = argparse.ArgumentParser(description='Predict depth, filter, and fuse')
 parser.add_argument('--model', default='mvsnet', help='select model')
 
-parser.add_argument('--dataset', default='dtu_yao_eval', help='select dataset')
-parser.add_argument('--testpath', help='testing data dir for some scenes')
-parser.add_argument('--testlist', help='testing scene list')
+parser.add_argument('--dataset', default='general_eval4_diligent_stage4', help='select dataset')
+parser.add_argument('--testpath', default='/ssd3/hsy/Dataset/DiLiGenT-MV/mvpmsData', help='testing data dir for some scenes')
+parser.add_argument('--testlist', default='lists/diligent_mv/test.txt', help='testing scene list')
 
 parser.add_argument('--batch_size', type=int, default=5, help='testing batch size')
 parser.add_argument('--numdepth', type=int, default=192, help='the number of depth values')
 
-parser.add_argument('--loadckpt', default=None, help='load a specific checkpoint')
+parser.add_argument('--loadckpt', default='/ssd3/hsy/SnowMVPS/checkpoints/mvps/23.ckpt', help='load a specific checkpoint')
 parser.add_argument('--outdir', default='./outputs', help='output dir')
-
-parser.add_argument('--share_cr', action='store_true', help='whether share the cost volume regularization')
 
 #PS Model
 parser.add_argument('--ps_fuse_type', default='max', type=str)
@@ -53,7 +50,7 @@ parser.add_argument('--ndepths', type=str, default="8,8,4,4", help='ndepths')
 parser.add_argument('--depth_inter_r', type=str, default="0.5,0.5,0.5,1", help='depth_intervals_ratio')
 
 parser.add_argument('--num_light', type=int, default=10)
-parser.add_argument('--interval_scale', type=float, required=True, help='the depth interval scale')
+parser.add_argument('--interval_scale', type=float, default=1.06, help='the number of depth values')
 parser.add_argument('--num_view', type=int, default=5, help='num of view')
 parser.add_argument('--max_h', type=int, default=1200, help='testing max h')
 parser.add_argument('--max_w', type=int, default=1600, help='testing max w')
@@ -64,7 +61,7 @@ parser.add_argument('--save_freq', type=int, default=500, help='save freq of loc
 
 parser.add_argument('--filter_method', type=str, default='gipuma', choices=["gipuma", "normal"], help="filter method")
 
-parser.add_argument('--use_sdps', action='store_true', help='use lighting directions predicted by SDPS-Net.')
+parser.add_argument('--use_sdps', default=False, action='store_true', help='use lighting directions predicted by SDPS-Net.')
 
 #filter
 parser.add_argument('--conf', type=float, default=0.3, help='prob confidence')
@@ -74,25 +71,25 @@ parser.add_argument("--fpn_base_channel", type=int, default=8)
 parser.add_argument("--reg_channel", type=int, default=8)
 parser.add_argument('--reg_mode', type=str, default="reg2d")
 parser.add_argument('--dlossw', type=str, default="1,1,1,1", help='depth loss weight for different stage')
-parser.add_argument('--resume', action='store_true', help='continue to train the model')
-parser.add_argument('--group_cor', action='store_true',help='group correlation')
+parser.add_argument('--resume', default=False, action='store_true', help='continue to train the model')
+parser.add_argument('--group_cor', default=True, action='store_true',help='group correlation')
 parser.add_argument('--group_cor_dim', type=str, default="8,8,4,4", help='group correlation dim')
 # parser.add_argument('--group_cor_dim', type=str, default="64,32,16", help='group correlation dim')
-parser.add_argument('--inverse_depth', action='store_true',help='inverse depth')
+parser.add_argument('--inverse_depth', default=True, action='store_true',help='inverse depth')
 parser.add_argument('--agg_type', type=str, default="ConvBnReLU3D", help='cost regularization type')
-parser.add_argument('--dcn', action='store_true',help='dcn')
+parser.add_argument('--dcn', default=False, action='store_true',help='dcn')
 parser.add_argument('--arch_mode', type=str, default="fpn")
-parser.add_argument('--ot_continous', action='store_true',help='optimal transport continous gt bin')
+parser.add_argument('--ot_continous', default=False, action='store_true',help='optimal transport continous gt bin')
 parser.add_argument('--ot_eps', type=float, default=1)
 parser.add_argument('--ot_iter', type=int, default=0)
-parser.add_argument('--rt', action='store_true',help='robust training')
-parser.add_argument('--use_raw_train', action='store_true',help='using 1200x1600 training')
-parser.add_argument('--mono', action='store_true',help='query to build mono depth prediction and loss')
+parser.add_argument('--rt', default=True, action='store_true',help='robust training')
+parser.add_argument('--use_raw_train', default=False, action='store_true',help='using 1200x1600 training')
+parser.add_argument('--mono', default=False, action='store_true',help='query to build mono depth prediction and loss')
 parser.add_argument('--split', type=str, default='intermediate', help='intermediate or advanced')
-parser.add_argument('--save_jpg', action='store_true')
-parser.add_argument('--ASFF', action='store_true')
-parser.add_argument('--vis_ETA', action='store_true')
-parser.add_argument('--vis_mono', action='store_true')
+parser.add_argument('--save_jpg', default=False, action='store_true')
+parser.add_argument('--ASFF', default=False, action='store_true')
+parser.add_argument('--vis_ETA', default=False, action='store_true')
+parser.add_argument('--vis_mono', default=False, action='store_true')
 parser.add_argument('--attn_temp', type=float, default=2)
 
 # parse arguments and check
@@ -216,10 +213,11 @@ def save_scene_depth(testlist):
     
     # load checkpoint file specified by args.loadckpt
     print("loading model {}".format(args.loadckpt))
-    state_dict = torch.load(args.loadckpt, map_location=torch.device("cpu"))
+    # state_dict = torch.load(args.loadckpt, map_location=torch.device("cpu"))
+    # # state_dict = torch.load(args.loadckpt)
     
-    model.load_state_dict(state_dict['mvs_model'], strict=True)
-    ps_model.load_state_dict(state_dict['ps_model'], strict=True)
+    # model.load_state_dict(state_dict['mvs_model'], strict=True)
+    # ps_model.load_state_dict(state_dict['ps_model'], strict=True)
     model = nn.DataParallel(model)
     ps_model = nn.DataParallel(ps_model)
     model.cuda()
@@ -302,8 +300,8 @@ def save_scene_depth(testlist):
                 cv2.imwrite(normal_filename[:-3]+"jpg", normal_est)
                 
                 #save confidence maps
-                confidence_list = [outputs['stage{}'.format(i)]['photometric_confidence'].squeeze(0) for i in range(1,5)]
-                val_vol_list = [outputs['stage{}'.format(i)]['valid_volume'].squeeze(0) for i in range(1,5)]
+                confidence_list = [outputs['stage{}'.format(i)]['photometric_confidence'][0] for i in range(1,5)] # reference view
+                val_vol_list = [outputs['stage{}'.format(i)]['valid_volume'][0] for i in range(1,5)] # reference view
 
                 photometric_confidence = confidence_list[-1]  # H W
                 val = np.mean(val_vol_list[-1], axis = 0)
