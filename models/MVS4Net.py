@@ -131,9 +131,9 @@ class MVS4net(nn.Module):
                 else:
                     depth_hypo, normal_plane = schedule_range(outputs_stage['inverse_min_depth'].detach(), outputs_stage['inverse_max_depth'].detach(), outputs_stage['normal_plane'].detach(), self.stage_splits[stage_idx], H, W, sum_weight)
 
-            # resize_transform = T.Resize((H, W))
-            # pred_normal_stage = resize_transform(pred_normal)                
-            outputs_stage = self.stagenet(features_stage, rotation, normal_plane, pred_normal, self.confinet, proj_matrices_stage, depth_hypo=depth_hypo, regnet=self.reg[stage_idx], stage_idx=stage_idx, neighbor = self.neighbor,
+            resize_transform = T.Resize((H, W))
+            pred_normal_stage = resize_transform(pred_normal)                
+            outputs_stage = self.stagenet(features_stage, rotation, normal_plane, self.normalnet[stage_idx], pred_normal_stage, self.confinet, proj_matrices_stage, depth_hypo=depth_hypo, regnet=self.reg[stage_idx], stage_idx=stage_idx, neighbor = self.neighbor,
                                         group_cor=self.group_cor, group_cor_dim=self.group_cor_dim[stage_idx],
                                         split_itv=self.depth_interals_ratio[stage_idx],
                                         fn=filename)
@@ -219,7 +219,7 @@ def frequency_domain_filter(depth, rho_ratio):
     return depth_filtered
 
 
-def MVS4net_loss(depth_values, inputs, normal_est, depth_gt_ms, mask_ms, normal_gt, **kwargs):
+def MVS4net_loss(depth_values, inputs, ps_normal_est, depth_gt_ms, mask_ms, normal_gt, **kwargs):
     surfacenet = SurfaceNet()
     stage_lw = kwargs.get("stage_lw", [1,1,1,1])
     l1ot_lw = kwargs.get("l1ot_lw", [0,1])
@@ -241,7 +241,7 @@ def MVS4net_loss(depth_values, inputs, normal_est, depth_gt_ms, mask_ms, normal_
         depth_pred = stage_inputs['depth_filtered']
         hypo_depth = stage_inputs['hypo_depth']
         prob_volume = stage_inputs['attn_weight']
-        # normal_est = stage_inputs["normal_plane"]
+        mvs_normal_est = stage_inputs["normal_plane"]
         num_valid_volume = stage_inputs["valid_volume"]
         proj_matrix = stage_inputs["proj_matrix"]
    
@@ -274,18 +274,31 @@ def MVS4net_loss(depth_values, inputs, normal_est, depth_gt_ms, mask_ms, normal_
         range_err_ratio.append(mask_out_of_range[omask[:, 0]].float().mean()) # reference view
         
 
+        resize_transform = T.Resize((H, W))
+        this_stage_normal_gt = resize_transform(normal_gt[:, 0]) # reference view
+        this_stage_normal_loss = F.smooth_l1_loss(mvs_normal_est[normal_mask[:, 0]], this_stage_normal_gt[normal_mask[:, 0]], reduction='mean') # reference views
+
         if stage_idx == 3:    
-            normal_loss += F.smooth_l1_loss(normal_est[normal_mask], normal_gt[normal_mask], reduction='mean')
-            total_loss = total_loss + stage_lw[stage_idx] * pw_loss + stage_lw[stage_idx] * normal_loss
+            ps_normal_loss = F.smooth_l1_loss(ps_normal_est[normal_mask], normal_gt[normal_mask], reduction='mean') # all views
+            
+            total_loss = total_loss + stage_lw[stage_idx] * (pw_loss + this_stage_normal_loss + ps_normal_loss)
         else:
-            total_loss = total_loss + stage_lw[stage_idx] * pw_loss + stage_lw[stage_idx]
+            total_loss = total_loss + stage_lw[stage_idx] * (pw_loss + this_stage_normal_loss)
+
+
+        #     # normal_loss += F.smooth_l1_loss(normal_est[normal_mask], normal_gt[normal_mask], reduction='mean')
+        #     total_loss = total_loss + stage_lw[stage_idx] * pw_loss + stage_lw[stage_idx] * normal_loss
+        # else:
+        #     total_loss = total_loss + stage_lw[stage_idx] * pw_loss + stage_lw[stage_idx]
 
         stage_l1_loss.append(pw_loss)
-        # stage_normal_loss.append(this_stage_normal_loss)
+        stage_normal_loss.append(this_stage_normal_loss)
+
+        # total_loss = total_loss + stage_lw[stage_idx] * (pw_loss + this_stage_normal_loss + ps_normal_loss)
 
         # total_loss = total_loss + stage_lw[stage_idx] * (( pw_loss) + 0.5*this_stage_normal_loss)
             
-    return total_loss, stage_l1_loss, normal_loss, range_err_ratio
+    return total_loss, stage_l1_loss, ps_normal_loss, torch.stack(stage_normal_loss).mean(), range_err_ratio
 
 
 def pixel_wise_loss(prob_volume, depth_gt, mask, depth_value, valid_vol_mask, stage_idx):

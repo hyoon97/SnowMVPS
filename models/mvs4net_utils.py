@@ -1304,7 +1304,7 @@ class stagenet(nn.Module):
         self.vis_ETA = vis_ETA
         self.attn_temp = attn_temp
 
-    def forward(self, features, rotation, normal_plane, pred_normal, confidencenet, proj_matrices, depth_hypo, regnet, stage_idx, neighbor, group_cor=False, group_cor_dim=8, split_itv=1, fn=None):
+    def forward(self, features, rotation, normal_plane, normalnet, pred_normal, confidencenet, proj_matrices, depth_hypo, regnet, stage_idx, neighbor, group_cor=False, group_cor_dim=8, split_itv=1, fn=None):
 
         # step 1. feature extraction
         proj_matrices = torch.unbind(proj_matrices, 1)
@@ -1431,18 +1431,18 @@ class stagenet(nn.Module):
 
         depth = torch.gather(depth_hypo, 1, attn_max_indices).squeeze(1)  # B H W
         
-        # est_normal_plane = normalnet(norm)
-        est_normal_plane = pred_normal
+        est_normal_plane = normalnet(norm) # B 3 H W
+        est_normal_plane = torch.nn.functional.normalize(pred_normal + est_normal_plane, dim=1) # B 3 H W
 
         if stage_idx==3:
             odepth = depth.clone()
             attn_top2_indices = torch.topk(attn_weight,2, dim=1)[1][:,1,:,:].unsqueeze(1)
             top2_depth = torch.gather(depth_hypo, 1, attn_top2_indices).squeeze(1)  # B H W
-            nweight = torch.clamp(est_normal_plane[:,2,:,:], min = 0.0)
+            nweight = torch.clamp(est_normal_plane[:,2,:,:], min=0.0)
             sec_depth = (1 - nweight) * (0.25 * depth + 0.75 * top2_depth) + (nweight) * (0.5 * depth + 0.5 * top2_depth)
             #sec_depth = (depth + top2_depth)/2
             
-            odepth[:,1::2,1::2] = sec_depth[:,1::2,1::2]
+            odepth[:, 1::2, 1::2] = sec_depth[:, 1::2, 1::2]
             depth = odepth
 
             
@@ -1456,7 +1456,9 @@ class stagenet(nn.Module):
             ay = ay.unsqueeze(1).unsqueeze(1).unsqueeze(1).repeat(1,1,depth.size(1),depth.size(2))
             
         
-        ret_dict = {"depth": depth,"photometric_confidence": photometric_confidence, "hypo_depth": depth_hypo, "attn_weight": attn_weight, "normal_plane": est_normal_plane,"ax":ax,"ay":ay,"sum_weight":sum_weight[:,0,0,:,:],"weight":torch.unsqueeze(torch.stack(sim),0),"valid_volume":num_valid_volume,"val":torch.unsqueeze(torch.stack(val),0),"proj_matrix":ref_proj}
+        ret_dict = {"depth": depth,"photometric_confidence": photometric_confidence, "hypo_depth": depth_hypo, "attn_weight": attn_weight, 
+                    "normal_plane": est_normal_plane,"ax":ax,"ay":ay,"sum_weight":sum_weight[:,0,0,:,:],"weight":torch.unsqueeze(torch.stack(sim),0),
+                    "valid_volume":num_valid_volume,"val":torch.unsqueeze(torch.stack(val),0),"proj_matrix":ref_proj}
 
         if self.inverse_depth:
             last_depth_itv = 1./depth_hypo[:,2,:,:] - 1./depth_hypo[:,1,:,:]

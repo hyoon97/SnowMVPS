@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import os
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 import argparse, sys, time, gc, datetime
 import torch
 import torch.nn as nn
@@ -36,14 +36,14 @@ parser.add_argument('--lrepochs', type=str, default="4,8,11,13,16,18,19:1.5", he
 
 parser.add_argument('--wd', type=float, default=0.0, help='weight decay')
 
-parser.add_argument('--batch_size', type=int, default=1, help='train batch size')
+parser.add_argument('--batch_size', type=int, default=4, help='train batch size')
 parser.add_argument('--interval_scale', type=float, default=1.06, help='the number of depth values')
 
-parser.add_argument('--loadckpt', default=None, help='load a specific checkpoint')
+parser.add_argument('--loadckpt', default='checkpoints/mvps-4stage-unet/0.ckpt', help='load a specific checkpoint')
 parser.add_argument('--logdir', default='checkpoints/logs', help='the directory to save checkpoints/logs')
 parser.add_argument('--resume', default=False, action='store_true', help='continue to train the model')
 
-parser.add_argument('--summary_freq', type=int, default=2, help='print and summary frequency')
+parser.add_argument('--summary_freq', type=int, default=10, help='print and summary frequency')
 parser.add_argument('--save_freq', type=int, default=1, help='save checkpoint frequency')
 parser.add_argument('--eval_freq', type=int, default=1, help='eval freq')
 
@@ -125,11 +125,12 @@ def train(model, ps_model, model_loss, optimizer, TrainImgLoader, TestImgLoader,
             lr_scheduler.step()
 
             d_loss = (scalar_outputs["s0_d_loss"] + scalar_outputs["s1_d_loss"] + scalar_outputs["s2_d_loss"]) / 3
-            n_loss = scalar_outputs["n_loss"]
+            n_mvs_loss = scalar_outputs["n_mvs_loss"]
+            n_ps_loss = scalar_outputs["n_ps_loss"]
             d_error = scalar_outputs["abs_depth_error"]
             # range_error = (scalar_outputs["s0_range_err_ratio"] + scalar_outputs["s1_range_err_ratio"] + scalar_outputs["s2_range_err_ratio"]) / 3
 
-            logs = {'Epoch': epoch_idx, 'Iter': batch_idx, 'loss': loss, 'd_loss': d_loss, 'n_loss': n_loss, 'd_error': d_error}
+            logs = {'Epoch': epoch_idx, 'Iter': batch_idx, 'loss': loss, 'd_loss': d_loss, 'n_mvs_loss': n_mvs_loss, 'n_ps_loss': n_ps_loss, 'd_error': d_error}
             progress_bar.set_postfix(**logs)
             progress_bar.update(1)
 
@@ -173,11 +174,12 @@ def train(model, ps_model, model_loss, optimizer, TrainImgLoader, TestImgLoader,
                 loss, scalar_outputs, image_outputs = test_sample_depth(model, ps_model, model_loss, sample, args)
 
                 d_loss = (scalar_outputs["s0_d_loss"] + scalar_outputs["s1_d_loss"] + scalar_outputs["s2_d_loss"]) / 3
-                n_loss = scalar_outputs["n_loss"]
+                n_mvs_loss = scalar_outputs["n_mvs_loss"]
+                n_ps_loss = scalar_outputs["n_ps_loss"]
                 d_error = scalar_outputs["abs_depth_error"]
                 # range_error = (scalar_outputs["s0_range_err_ratio"] + scalar_outputs["s1_range_err_ratio"] + scalar_outputs["s2_range_err_ratio"]) / 3
 
-                logs = {'Epoch': epoch_idx, 'Iter': batch_idx, 'loss': loss, 'd_loss': d_loss, 'n_loss': d_error, 'range_error': d_error}
+                logs = {'Epoch': epoch_idx, 'Iter': batch_idx, 'loss': loss, 'd_loss': d_loss, 'n_mvs_loss': n_mvs_loss, 'n_ps_loss': n_ps_loss, 'd_error': d_error}
                 
                 if (not is_distributed) or (dist.get_rank() == 0):
                     if do_summary:
@@ -226,12 +228,13 @@ def train_sample(model, ps_model, model_loss, optimizer, sample, args):
 
     ps_outputs = {}
     feats, ps_outputs['normal'] = ps_model(sample_cuda)
-    normal_est = ps_outputs['normal'] # all views
+    ps_normal_est = ps_outputs['normal'] # all views
     
-    outputs = model(sample_cuda["imgs"], feats, sample_cuda["R"], sample_cuda["proj_matrices"], sample_cuda["depth_values"], normal_est[:, 0])
+    outputs = model(sample_cuda["imgs"], feats, sample_cuda["R"], sample_cuda["proj_matrices"], sample_cuda["depth_values"], ps_normal_est[:, 0])
     depth_est = outputs["depth"]
+    mvs_normal_est = outputs["normal_plane"]
 
-    loss, stage_d_loss, normal_loss, range_err_ratio = model_loss(sample_cuda["depth_values"], outputs, normal_est,
+    loss, stage_d_loss, ps_normal_loss, mvs_normal_loss, range_err_ratio = model_loss(sample_cuda["depth_values"], outputs, ps_normal_est,
                                         depth_gt_ms, mask_ms, sample_cuda['normals']['stage4'],
                                         stage_lw=[float(e) for e in args.dlossw.split(",") if e], 
                                         l1ce_lw=[float(lw) for lw in args.l1ce_lw.split(",")],
@@ -255,7 +258,8 @@ def train_sample(model, ps_model, model_loss, optimizer, sample, args):
                       "s0_range_err_ratio":range_err_ratio[0],
                       "s1_range_err_ratio":range_err_ratio[1],
                       "s2_range_err_ratio":range_err_ratio[2],
-                      "n_loss": normal_loss,
+                      "n_ps_loss": ps_normal_loss,
+                      "n_mvs_loss": mvs_normal_loss,
                       "abs_depth_error": AbsDepthError_metrics(depth_est, depth_gt, mask_ref > 0.5),
                       "thres2mm_error": Thres_metrics(depth_est, depth_gt, mask_ref > 0.5, 2),
                       "thres4mm_error": Thres_metrics(depth_est, depth_gt, mask_ref > 0.5, 4),
@@ -265,7 +269,8 @@ def train_sample(model, ps_model, model_loss, optimizer, sample, args):
                     #  "depth_est_nomask": depth_est_nomask_nor,
                      "depth_gt": depth_gt_nor,
                      "normal_gt": sample['normals']['stage4'][:, 0], # reference view
-                     "normal_est": normal_est[:, 0] * mask_ref.unsqueeze(1), # reference view
+                     "ps_normal_est": ps_normal_est[:, 0] * mask_ref.unsqueeze(1), # reference view
+                     "normal_est": mvs_normal_est * mask_ref.unsqueeze(1), # reference view
                      "ref_img": sample["imgs"][0],
                      "mask": mask_ref,
                      "errormap": (depth_est_nor - depth_gt_nor).abs(),
@@ -298,18 +303,19 @@ def test_sample_depth(model, ps_model, model_loss, sample, args):
 
     ps_outputs = {}
     feats, ps_outputs['normal'] = ps_model(sample_cuda)
-    normal_est = ps_outputs['normal'] # all views
+    ps_normal_est = ps_outputs['normal'] # all views
     
-    outputs = model(sample_cuda["imgs"], feats, sample_cuda["R"], sample_cuda["proj_matrices"], sample_cuda["depth_values"], normal_est[:, 0])
+    outputs = model(sample_cuda["imgs"], feats, sample_cuda["R"], sample_cuda["proj_matrices"], sample_cuda["depth_values"], ps_normal_est[:, 0])
     depth_est = outputs["depth"]
+    mvs_normal_est = outputs["normal_plane"]
     #depth_reg = outputs["depth_reg"]
     num_valid_volume = outputs["valid_volume"]
     valid_vol_mask = torch.mean(num_valid_volume, dim = 1)/4.0
     re_mask = valid_vol_mask > 0.1
     mask = mask > 0.5
     fmask = mask*re_mask
-    
-    loss, stage_d_loss, normal_loss, range_err_ratio = model_loss(sample_cuda["depth_values"], outputs, normal_est,
+
+    loss, stage_d_loss, ps_normal_loss, mvs_normal_loss, range_err_ratio = model_loss(sample_cuda["depth_values"], outputs, ps_normal_est,
                                         depth_gt_ms, mask_ms, sample_cuda['normals']['stage4'],
                                         stage_lw=[float(e) for e in args.dlossw.split(",") if e], 
                                         l1ce_lw=[float(lw) for lw in args.l1ce_lw.split(",")],
@@ -331,7 +337,8 @@ def test_sample_depth(model, ps_model, model_loss, sample, args):
                       "s0_range_err_ratio":range_err_ratio[0],
                       "s1_range_err_ratio":range_err_ratio[1],
                       "s2_range_err_ratio":range_err_ratio[2],
-                      "n_loss": normal_loss,
+                      "n_ps_loss": ps_normal_loss,
+                      "n_mvs_loss": mvs_normal_loss,
                       "abs_depth_error": AbsDepthError_metrics(depth_est, depth_gt, mask > 0.5),
                       "thres2mm_error": Thres_metrics(depth_est, depth_gt, mask > 0.5, 2),
                       "thres4mm_error": Thres_metrics(depth_est, depth_gt, mask > 0.5, 4),
@@ -341,7 +348,8 @@ def test_sample_depth(model, ps_model, model_loss, sample, args):
                     #  "depth_est_nomask": depth_est_nomask_nor,
                      "depth_gt": depth_gt_nor,
                      "normal_gt": sample['normals']['stage4'][:, 0], # reference view
-                     "normal_est": normal_est[:, 0] * mask.unsqueeze(1), # reference view
+                     "ps_normal_est": ps_normal_est[:, 0] * mask.unsqueeze(1), # reference view
+                     "normal_est": mvs_normal_est * mask.unsqueeze(1), # reference view
                      "ref_img": sample["imgs"][0],
                      "mask": mask,
                      "errormap": (depth_est_nor - depth_gt_nor).abs(),

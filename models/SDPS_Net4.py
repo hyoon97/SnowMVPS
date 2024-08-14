@@ -137,42 +137,42 @@ class FeatExtractor(nn.Module):
 
 
     def forward(self, x):
-        out = self.conv0(x)
-        out = self.conv1(out)
-        out = self.conv2(out)
-        out = self.conv3(out)
-        out = self.conv4(out)
-        out = self.conv5(out)
-        out = self.conv6(out)
-        out = self.conv7(out)
-        out = self.conv8(out)
-        out = self.conv9(out)
-        out = self.conv10(out)
-        out = self.conv11(out)
+        out = self.conv0(x) # B 16 512 512
+        out = self.conv1(out) # B 16 512 512
+        out_d0 = self.conv2(out) # B 16 512 512
+        out = self.conv3(out_d0) # B 32 256 256
+        out = self.conv4(out) # B 32 256 256
+        out_d1 = self.conv5(out) # B 32 256 256
+        out = self.conv6(out_d1) # B 64 128 128
+        out = self.conv7(out) # B 64 128 128
+        out_d2 = self.conv8(out) # B 64 128 128
+        out = self.conv9(out_d2) # B 128 64 64
+        out = self.conv10(out) # B 128 64 64
+        out = self.conv11(out) # B 128 64 64
 
         outputs = {}
-        out4 = self.out4(out)
+        out4 = self.out4(out) # B 128 64 64
         outputs['stage1'] = out4
 
-        out = self.deconv7(out)
-        out = self.deconv8(out)
-        out = self.deconv9(out)
+        out = self.deconv7(out) + out_d2 # B 64 128 128
+        out = self.deconv8(out) # B 64 128 128
+        out = self.deconv9(out) # B 64 128 128
 
-        out1 = self.out1(out)
+        out1 = self.out1(out) # B 64 128 128
         outputs['stage2'] = out1
 
-        out = self.deconv1(out)
-        out = self.deconv2(out)
-        out = self.deconv3(out)
+        out = self.deconv1(out) + out_d1 # B 32 256 256
+        out = self.deconv2(out) # B 32 256 256
+        out = self.deconv3(out) # B 32 256 256
 
-        out2 = self.out2(out)
+        out2 = self.out2(out) # B 32 256 256
         outputs['stage3'] = out2
         
-        out = self.deconv4(out)
-        out = self.deconv5(out)
-        out = self.deconv6(out)
+        out = self.deconv4(out) + out_d0 # B 16 512 512
+        out = self.deconv5(out) # B 16 512 512
+        out = self.deconv6(out) # B 16 512 512
 
-        out3 = self.out3(out)
+        out3 = self.out3(out) # B 16 512 512
         outputs['stage4'] = out3
         
         return outputs, out
@@ -200,6 +200,9 @@ class NENet(nn.Module):
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
+
+        self.view_dir = -torch.Tensor([0, 0, 1]).to('cuda')
+        self.shininess = 32
 
     def prepareInputs(self, x):
         imgs = x['imgs']
@@ -229,49 +232,139 @@ class NENet(nn.Module):
         view_feats_stage3 = []
         view_feats_stage4 = []
         view_normals = []
-        for v in range(len(view_inputs)):
+        for v in range(len(view_inputs)): # for views
             inputs = view_inputs[v]
             feats_stage1 = torch.Tensor()
             feats_stage2 = torch.Tensor()
             feats_stage3 = torch.Tensor()
             feats_stage4 = torch.Tensor()
             feats = torch.Tensor()
-            for i in range(len(inputs)):
+            for i in range(len(inputs)): # for lights
                 outputs_dict, out = self.extractor(inputs[i])
+
+            #     ################### 
                 if i == 0:
-                    feats_stage1 = outputs_dict['stage1']
-                    feats_stage2 = outputs_dict['stage2']
-                    feats_stage3 = outputs_dict['stage3']
-                    feats_stage4 = outputs_dict['stage4']
-                    feats = out
+                    feats_stage1 = outputs_dict['stage1'].unsqueeze(1)
+                    feats_stage2 = outputs_dict['stage2'].unsqueeze(1)
+                    feats_stage3 = outputs_dict['stage3'].unsqueeze(1)
+                    feats_stage4 = outputs_dict['stage4'].unsqueeze(1)
+                    feats = out.unsqueeze(1)
                 else:
-                    if self.fuse_type == 'mean':
-                        feats_stage1 = torch.stack([feats_stage1, outputs_dict['stage1']], 1).sum(1)
-                        feats_stage2 = torch.stack([feats_stage2, outputs_dict['stage2']], 1).sum(1)
-                        feats_stage3 = torch.stack([feats_stage3, outputs_dict['stage3']], 1).sum(1)
-                        feats_stage4 = torch.stack([feats_stage4, outputs_dict['stage4']], 1).sum(1)
-                        feats = torch.stack([feats, out], 1).sum(1)
-                    elif self.fuse_type == 'max':
-                        feats_stage1, _ = torch.stack([feats_stage1, outputs_dict['stage1']], 1).max(1)
-                        feats_stage2, _ = torch.stack([feats_stage2, outputs_dict['stage2']], 1).max(1)
-                        feats_stage3, _ = torch.stack([feats_stage3, outputs_dict['stage3']], 1).max(1)
-                        feats_stage4, _ = torch.stack([feats_stage4, outputs_dict['stage4']], 1).max(1)
-                        feats, _ = torch.stack([feats, out], 1).max(1)
+                    feats_stage1 = torch.cat([feats_stage1, outputs_dict['stage1'].unsqueeze(1)], 1)
+                    feats_stage2 = torch.cat([feats_stage2, outputs_dict['stage2'].unsqueeze(1)], 1)
+                    feats_stage3 = torch.cat([feats_stage3, outputs_dict['stage3'].unsqueeze(1)], 1)
+                    feats_stage4 = torch.cat([feats_stage4, outputs_dict['stage4'].unsqueeze(1)], 1)
+                    feats = torch.cat([feats, out.unsqueeze(1)], 1)
+
             if self.fuse_type == 'mean':
-                feats_stage1 = feats_stage1 / len(inputs)
-                feats_stage2 = feats_stage2 / len(inputs)
-                feats_stage3 = feats_stage3 / len(inputs)
-                feats_stage4 = feats_stage4 / len(inputs)
-                feats = feats / len(inputs)
-            view_feats_stage1.append(feats_stage1)
-            view_feats_stage2.append(feats_stage2)
-            view_feats_stage3.append(feats_stage3)
-            view_feats_stage4.append(feats_stage4)
+                feats = feats.mean(1)
+            elif self.fuse_type == 'max':
+                feats, _ = feats.max(1)
 
             normal = self.regressor(feats)
             normal = torch.nn.functional.normalize(normal, 2, 1)
             view_normals.append(normal)
             del feats
+
+            # normalT = normal.permute(0, 2, 3, 1)
+            # _, H, W, _ = normalT.shape
+
+            # light_dir = x['light_dirs'][:, v]
+            # light_dir = torch.nn.functional.normalize(light_dir, dim=-1)
+
+            # # Calculate dot products between normals and light directions: (H * W, 3) @ (L, 3).T -> (L, H * W)
+            # dot_nl = torch.einsum('vhwz,vlz->vlhw', normalT, light_dir) # B x L x H x W
+
+            # # Calculate the shadow maps by clamping negative values to 0
+            # shadow_maps = torch.clamp(dot_nl, min=0.5, max=1)**0.2 # 1 x L x H x W
+
+            # shadow_stage4 = shadow_maps
+            # shadow_stage3 = torch.nn.functional.interpolate(shadow_maps, scale_factor=1/2, mode='bilinear', align_corners=False)
+            # shadow_stage2 = torch.nn.functional.interpolate(shadow_maps, scale_factor=1/4, mode='bilinear', align_corners=False)
+            # shadow_stage1 = torch.nn.functional.interpolate(shadow_maps, scale_factor=1/8, mode='bilinear', align_corners=False)
+
+            # shadow_stage1 = shadow_stage1 / shadow_stage1.sum(1, keepdim=True)
+            # shadow_stage2 = shadow_stage2 / shadow_stage2.sum(1, keepdim=True)
+            # shadow_stage3 = shadow_stage3 / shadow_stage3.sum(1, keepdim=True)
+            # shadow_stage4 = shadow_stage4 / shadow_stage4.sum(1, keepdim=True)
+
+            # reflection_vectors = 2 * dot_nl.reshape(-1, len(inputs), H*W, 1) * normalT.reshape(-1, 1, H*W, 3) - light_dir.unsqueeze(2) # B x V x H*W x 3
+            # reflection_vectors = torch.nn.functional.normalize(reflection_vectors, dim=-1)
+            # reflection_vectors = reflection_vectors.reshape(-1, len(inputs), H, W, 3)
+
+            # # Calculate specular intensity: (R • V)^shininess, result shape: (L, H * W)
+            # specular_intensity = torch.einsum('nlhwz,nz->nlhw', reflection_vectors, self.view_dir[None].repeat(reflection_vectors.shape[0], 1))
+            # specular_maps = torch.pow(torch.clamp(specular_intensity, min=0, max=0.5), self.shininess)
+            # specular_maps = (1 - specular_maps) # B x L x H x W
+
+            # specular_stage4 = specular_maps
+            # specular_stage3 = torch.nn.functional.interpolate(specular_maps, scale_factor=1/2, mode='bilinear', align_corners=False)
+            # specular_stage2 = torch.nn.functional.interpolate(specular_maps, scale_factor=1/4, mode='bilinear', align_corners=False)
+            # specular_stage1 = torch.nn.functional.interpolate(specular_maps, scale_factor=1/8, mode='bilinear', align_corners=False)
+
+            # specular_stage1 = specular_stage1 / specular_stage1.sum(1, keepdim=True)
+            # specular_stage2 = specular_stage2 / specular_stage2.sum(1, keepdim=True)
+            # specular_stage3 = specular_stage3 / specular_stage3.sum(1, keepdim=True)
+            # specular_stage4 = specular_stage4 / specular_stage4.sum(1, keepdim=True)
+
+            if self.fuse_type == 'mean':
+                feats_stage1 = (feats_stage1).mean(1)
+                feats_stage2 = (feats_stage2).mean(1)
+                feats_stage3 = (feats_stage3).mean(1)
+                feats_stage4 = (feats_stage4).mean(1)
+                # feats_stage1 = (feats_stage1).mean(1)
+                # feats_stage2 = (feats_stage2).mean(1)
+                # feats_stage3 = (feats_stage3).mean(1)
+                # feats_stage4 = (feats_stage4).mean(1)
+            elif self.fuse_type == 'max':
+                # feats_stage1 = (feats_stage1 * 1 * (specular_stage1).unsqueeze(2)).sum(1)
+                # feats_stage2 = (feats_stage2 * 1 * (specular_stage2).unsqueeze(2)).sum(1)
+                # feats_stage3 = (feats_stage3 * 1 * (specular_stage3).unsqueeze(2)).sum(1)
+                # feats_stage4 = (feats_stage4 * 1 * (specular_stage4).unsqueeze(2)).sum(1)
+                # feats_stage1, _ = (feats_stage1 * 1 * specular_stage1.unsqueeze(2)).max(1)
+                # feats_stage2, _ = (feats_stage2 * 1 * specular_stage2.unsqueeze(2)).max(1)
+                # feats_stage3, _ = (feats_stage3 * 1 * specular_stage3.unsqueeze(2)).max(1)
+                # feats_stage4, _ = (feats_stage4 * 1 * specular_stage4.unsqueeze(2)).max(1)
+                feats_stage1, _ = (feats_stage1).max(1)
+                feats_stage2, _ = (feats_stage2).max(1)
+                feats_stage3, _ = (feats_stage3).max(1)
+                feats_stage4, _ = (feats_stage4).max(1)
+
+            #     # ###################
+            #     if i == 0:
+            #         feats_stage1 = outputs_dict['stage1']
+            #         feats_stage2 = outputs_dict['stage2']
+            #         feats_stage3 = outputs_dict['stage3']
+            #         feats_stage4 = outputs_dict['stage4']
+            #         feats = out
+            #     else:
+            #         if self.fuse_type == 'mean':
+            #             feats_stage1 = torch.stack([feats_stage1, outputs_dict['stage1']], 1).sum(1)
+            #             feats_stage2 = torch.stack([feats_stage2, outputs_dict['stage2']], 1).sum(1)
+            #             feats_stage3 = torch.stack([feats_stage3, outputs_dict['stage3']], 1).sum(1)
+            #             feats_stage4 = torch.stack([feats_stage4, outputs_dict['stage4']], 1).sum(1)
+            #             feats = torch.stack([feats, out], 1).sum(1)
+            #         elif self.fuse_type == 'max':
+            #             feats_stage1, _ = torch.stack([feats_stage1, outputs_dict['stage1']], 1).max(1)
+            #             feats_stage2, _ = torch.stack([feats_stage2, outputs_dict['stage2']], 1).max(1)
+            #             feats_stage3, _ = torch.stack([feats_stage3, outputs_dict['stage3']], 1).max(1)
+            #             feats_stage4, _ = torch.stack([feats_stage4, outputs_dict['stage4']], 1).max(1)
+            #             feats, _ = torch.stack([feats, out], 1).max(1)
+            # if self.fuse_type == 'mean':
+            #     feats_stage1 = feats_stage1 / len(inputs)
+            #     feats_stage2 = feats_stage2 / len(inputs)
+            #     feats_stage3 = feats_stage3 / len(inputs)
+            #     feats_stage4 = feats_stage4 / len(inputs)
+            #     feats = feats / len(inputs)
+            view_feats_stage1.append(feats_stage1)
+            view_feats_stage2.append(feats_stage2)
+            view_feats_stage3.append(feats_stage3)
+            view_feats_stage4.append(feats_stage4)
+
+            # normal = self.regressor(feats)
+            # normal = torch.nn.functional.normalize(normal, 2, 1)
+            # view_normals.append(normal)
+            # del feats
         view_normals = torch.stack(view_normals, 1)  # (b, v, 3, h, w)
         view_feats = {
             'stage1': view_feats_stage1,
