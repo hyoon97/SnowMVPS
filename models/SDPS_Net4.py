@@ -191,6 +191,11 @@ class NENet(nn.Module):
             nn.Conv2d(base_chs, 3, kernel_size=7, padding=3)  # normal est
         )
 
+        self.regressor2 = nn.Sequential(
+            ResnetBlock(3*2, 'zero', use_dropout, use_bias),
+            ResnetBlock(3*2, 'zero', use_dropout, use_bias),
+            nn.Conv2d(3*2, 3, kernel_size=7, padding=3)  # normal est
+        )
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
@@ -203,6 +208,9 @@ class NENet(nn.Module):
 
         self.view_dir = -torch.Tensor([0, 0, 1]).to('cuda')
         self.shininess = 32
+        self.gauss_scale = 1
+        self._mapping_size = 8
+        self._B = torch.randn((16, self._mapping_size)).to('cuda') * self.gauss_scale
 
     def prepareInputs(self, x):
         imgs = x['imgs']
@@ -261,8 +269,60 @@ class NENet(nn.Module):
             elif self.fuse_type == 'max':
                 feats, _ = feats.max(1)
 
+            '''
+            ####### freq10
+            B, C, H, W = feats.shape
+            feats_fourier = feats.permute(0, 2, 3, 1).reshape(B * H * W, C)
+            feats_fourier = feats_fourier @ (1 + self._B.to(feats.device))
+            feats_fourier = feats_fourier.view(B, H, W, self._mapping_size).permute(0, 3, 1, 2) # B x C x H x W
+            feats_fourier = 2 * torch.pi * feats_fourier
+            feats_fourier = torch.cat([torch.sin(feats_fourier), torch.cos(feats_fourier)], dim=1)
+            '''
+
             normal = self.regressor(feats)
-            normal = torch.nn.functional.normalize(normal, 2, 1)
+            normal = torch.nn.functional.normalize(normal, dim=1)
+
+            # # Prepare empty tensors to hold low and high frequency components
+            # high_freq = torch.zeros_like(normal)
+
+            # B, C, H, W = normal.shape
+            # cutoff_frequency = 16
+
+            # # Iterate over the color channels
+            # for c in range(C):
+            #     # 1. Perform 2D Fourier transform on each channel
+            #     freq_channel = torch.fft.fft2(normal[:, c, :, :])
+
+            #     # 2. Shift the zero-frequency component to the center of the spectrum
+            #     freq_channel_shifted = torch.fft.fftshift(freq_channel)
+
+            #     # 3. Create a mask for low frequencies
+            #     rows, cols = H, W
+            #     crow, ccol = rows // 2 , cols // 2  # center
+            #     low_freq_mask = torch.zeros((H, W), dtype=torch.bool).to(normal.device)
+            #     low_freq_mask[crow-cutoff_frequency:crow+cutoff_frequency, ccol-cutoff_frequency:ccol+cutoff_frequency] = True
+
+            #     # 4. Apply mask to separate low and high frequencies
+            #     # low_freq_channel = freq_channel_shifted * low_freq_mask
+            #     high_freq_channel = freq_channel_shifted * (~low_freq_mask)
+
+            #     # 5. Inverse shift and Inverse Fourier transform
+            #     # low_freq[:, c, :, :] = torch.fft.ifft2(torch.fft.ifftshift(low_freq_channel)).real
+            #     high_freq[:, c, :, :] = torch.fft.ifft2(torch.fft.ifftshift(high_freq_channel)).real
+
+            '''
+            ####### freq8
+            B, C, H, W = normal.shape
+            normal_fourier = normal.permute(0, 2, 3, 1).reshape(B * H * W, C)
+            normal_fourier = normal_fourier @ (1 + self._B.to(feats.device))
+            normal_fourier = normal_fourier.view(B, H, W, self._mapping_size).permute(0, 3, 1, 2) # B x C x H x W
+            normal_fourier = 2 * torch.pi * normal_fourier
+            normal_fourier = torch.cat([torch.sin(normal_fourier), torch.cos(normal_fourier)], dim=1)
+            normal = self.regressor2(normal_fourier)
+            '''
+            
+
+            # normal = torch.nn.functional.normalize(high_freq, dim=1)
             view_normals.append(normal)
             del feats
 
