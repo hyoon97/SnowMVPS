@@ -1004,14 +1004,14 @@ class gatt(nn.Module):
         module = importlib.import_module("models.mvs4net_utils")
         stride_conv_name = 'ConvBnReLU3D'
         
-        
-        
         self.qconv1 = getattr(module, stride_conv_name)(base_channel*4, base_channel*8, kernel_size=(1,1,1), stride=(1,1,1), pad=(0,0,0))
         self.qconv2 = getattr(module, stride_conv_name)(base_channel*16, base_channel*16, kernel_size=(1,1,1), stride=(1,1,1), pad=(0,0,0))
         
         self.kconv1 = getattr(module, conv_name)(4, base_channel*8, kernel_size=(3,3,3), stride=(1,2,2), pad=(1,1,1))
         self.kconv2 = getattr(module, conv_name)(base_channel*8, base_channel*16, kernel_size=(3,3,3), stride=(1,2,2), pad=(1,1,1))
         
+        self.vconv1 = getattr(module, conv_name)(4, base_channel*4, kernel_size=(3,3,3), stride=(1,2,2), pad=(1,1,1))
+        self.vconv2 = getattr(module, conv_name)(base_channel*4, base_channel*16, kernel_size=(3,3,3), stride=(1,2,2), pad=(1,1,1))
         
         self.conv0 = getattr(module, conv_name)(input_channel, base_channel)
         self.conv1 = getattr(module, stride_conv_name)(base_channel, base_channel*2, kernel_size=(1,3,3), stride=(1,2,2), pad=(0,1,1))
@@ -1046,6 +1046,37 @@ class gatt(nn.Module):
         self.norm2 = nn.Conv3d(8, 8, 3, stride=1, padding=1)
         self.norm3 = nn.Conv3d(8, 1, 3, stride=1, padding=1)
         
+    # def forward(self, x, d, n):
+    #     D = d.size(2)
+    #     d = torch.cat((d, n.unsqueeze(2).repeat(1,1,D,1,1)), dim = 1) # B 4 D H W
+
+    #     conv0 = self.conv0(x)
+
+    #     temp = 10
+
+    #     conv2 = self.conv2(self.conv1(conv0))
+        
+    #     query1 = self.qconv1(conv2)
+    #     key1 = self.kconv1(d)
+    #     attention = D*torch.softmax(torch.sum(query1*key1, dim = 1)/ temp, dim = 1).unsqueeze(1)
+    
+    #     conv4 = self.conv4(self.conv3(attention*conv2))
+        
+    #     query2 = self.qconv2(conv4)
+    #     key2 = self.kconv2(key1)
+    #     attention = D*torch.softmax(torch.sum(query2*key2, dim = 1)/ temp, dim = 1).unsqueeze(1)
+        
+        
+    #     x = self.conv6(self.conv5(attention*conv4))
+    #     x = conv4 + self.conv7(x)
+    #     x = conv2 + self.conv9(self.conv8(x))
+    #     x = conv0 + self.conv11(self.conv10(x))
+    #     n = self.norm3(self.norm2(self.norm1(x)))
+        
+    #     x = self.prob(x)
+        
+    #     return x.squeeze(1), n.squeeze(1)
+
     def forward(self, x, d, n):
         D = d.size(2)
         d = torch.cat((d, n.unsqueeze(2).repeat(1,1,D,1,1)), dim = 1) # B 4 D H W
@@ -1054,20 +1085,22 @@ class gatt(nn.Module):
 
         temp = 10
 
-        conv2 = self.conv2(self.conv1(conv0))
+        conv2 = self.conv2(self.conv1(conv0))  # gradient cost volume
         
         query1 = self.qconv1(conv2)
         key1 = self.kconv1(d)
+        value1 = self.vconv1(d)
         attention = D*torch.softmax(torch.sum(query1*key1, dim = 1)/ temp, dim = 1).unsqueeze(1)
     
         conv4 = self.conv4(self.conv3(attention*conv2))
         
         query2 = self.qconv2(conv4)
         key2 = self.kconv2(key1)
+        value2 = self.vconv2(value1)
         attention = D*torch.softmax(torch.sum(query2*key2, dim = 1)/ temp, dim = 1).unsqueeze(1)
         
         
-        x = self.conv6(self.conv5(attention*conv4))
+        x = self.conv6(self.conv5(attention*value2))
         x = conv4 + self.conv7(x)
         x = conv2 + self.conv9(self.conv8(x))
         x = conv0 + self.conv11(self.conv10(x))
@@ -1076,7 +1109,6 @@ class gatt(nn.Module):
         x = self.prob(x)
         
         return x.squeeze(1), n.squeeze(1)
-
 
 class reg2d_dcn(nn.Module):
     def __init__(self, input_channel=128, base_channel=32, conv_name='ConvBnReLU3D'):
@@ -1238,6 +1270,21 @@ class NormalNet(nn.Module):
 
         return est_normal
 
+class CombineNet(nn.Module):
+    def __init__(self, in_channels):
+        super(CombineNet, self).__init__()
+        
+        self.conv1 = Conv2d(in_channels, in_channels*3, 5, 1, padding=2)
+        self.conv2 = Conv2d(in_channels*3,in_channels*3, 5, 1, padding=2)
+        self.conv3 = Conv2d(in_channels*3,in_channels*3, 3, 1, padding=1)
+        self.res = Conv2d(in_channels*3, 3, 3, 1, padding=1, relu = False)
+
+    def forward(self, normal_mvs, normal_ps):
+        x = torch.cat([normal_mvs, normal_ps], dim=1) # B 6 H W
+        est_normal = self.res(self.conv3(self.conv2(self.conv1(x))))
+        est_normal = F.normalize(est_normal, dim = 1)
+
+        return est_normal
 
 class ConfidenceNet(nn.Module):
     def __init__(self, input_depths=8, input_channel = 8, stage_idx = 0, conv_name='ConvBnReLU3D'):
@@ -1304,7 +1351,7 @@ class stagenet(nn.Module):
         self.vis_ETA = vis_ETA
         self.attn_temp = attn_temp
 
-    def forward(self, features, rotation, normal_plane, normalnet, pred_normal, confidencenet, proj_matrices, depth_hypo, regnet, stage_idx, neighbor, group_cor=False, group_cor_dim=8, split_itv=1, fn=None):
+    def forward(self, features, rotation, normal_plane, normal_ps, normalnet, confidencenet, proj_matrices, depth_hypo, regnet, combinenet, stage_idx, neighbor, group_cor=False, group_cor_dim=8, split_itv=1, fn=None):
 
         # step 1. feature extraction
         proj_matrices = torch.unbind(proj_matrices, 1)
@@ -1313,9 +1360,9 @@ class stagenet(nn.Module):
         num_view = len(src_projs) + 1
         
         ref_R, src_Rs = rotation[:,0], torch.swapaxes(rotation[:,1:],0,1)
-        nor_R = ref_R@torch.linalg.inv(ref_R)
-        norv_R = nor_R[:,2,:] #Bx3
-        norv_R = norv_R.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, normal_plane.shape[2], normal_plane.shape[3])#B 3 W H
+        # nor_R = ref_R@torch.linalg.inv(ref_R)
+        # norv_R = nor_R[:,2,:] #Bx3
+        # norv_R = norv_R.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, normal_plane.shape[2], normal_plane.shape[3])#B 3 W H
         
         B,D,H,W = depth_hypo.shape
         
@@ -1343,10 +1390,6 @@ class stagenet(nn.Module):
 
             if stage_idx == 0:
                 src_weight = F.relu((normal_plane*norv_R).sum(dim = 1))
-            elif stage_idx == 1:
-                src_weight = F.avg_pool2d(F.relu((normal_plane*norv_R).sum(dim = 1)), kernel_size= 1, stride = 1, padding = 0, count_include_pad=False) + 0.01
-            elif stage_idx == 2:
-                src_weight = F.avg_pool2d(F.relu((normal_plane*norv_R).sum(dim = 1)), kernel_size= 1, stride = 1, padding = 0, count_include_pad=False) + 0.01                
             else:
                 src_weight = F.avg_pool2d(F.relu((normal_plane*norv_R).sum(dim = 1)), kernel_size= 1, stride = 1, padding = 0, count_include_pad=False) + 0.01
             
@@ -1417,7 +1460,11 @@ class stagenet(nn.Module):
         norm_hypo = ((depth_hypo - hypo_min)/(hypo_max - hypo_min)).unsqueeze(1)
         norm_hypo = norm_hypo.detach().clone()# B 1 D H W
             
+        ### base 11
         attn_weight, norm = regnet(cor_feats, norm_hypo, normal_plane)  # B D H W
+
+        ### base 12
+        # attn_weight, norm = regnet(cor_feats, norm_hypo, torch.nn.functional.normalize(normal_plane + normal_ps, dim=1))  # B D H W
         
         # if stage_idx == 3:
         #     photometric_confidence = confidencenet(cor_feats.transpose(1,2))
@@ -1430,9 +1477,51 @@ class stagenet(nn.Module):
         attn_max_indices = attn_weight.max(1, keepdim=True)[1]  # B 1 H W
 
         depth = torch.gather(depth_hypo, 1, attn_max_indices).squeeze(1)  # B H W
-        
+
+        # freq_normal = torch.fft.fft(norm, dim=1)
+        # low_freq_mask = torch.zeros_like(freq_normal, dtype=torch.bool)
+        # low_freq_mask[:, :4] = True # cutoff frequency = 4
+        # low_freq = freq_normal * low_freq_mask
+        # norm = torch.fft.ifft(low_freq, dim=1).real
+
+        ### base 12
         est_normal_plane = normalnet(norm) # B 3 H W
-        est_normal_plane = torch.nn.functional.normalize(pred_normal + est_normal_plane, dim=1) # B 3 H W
+
+        ### base 15
+        est_normal_plane = combinenet(est_normal_plane, normal_ps)
+
+        ### base 11
+        # est_normal_plane = torch.nn.functional.normalize(est_normal_plane + normal_ps, dim=1)
+
+        # # Prepare empty tensors to hold low and high frequency components
+        # low_freq = torch.zeros_like(est_normal_plane)
+
+        # B, C, H, W = est_normal_plane.shape
+        # cutoff_frequency = 16
+
+        # # Iterate over the color channels
+        # for c in range(C):
+        #     # 1. Perform 2D Fourier transform on each channel
+        #     freq_channel = torch.fft.fft2(est_normal_plane[:, c, :, :])
+
+        #     # 2. Shift the zero-frequency component to the center of the spectrum
+        #     freq_channel_shifted = torch.fft.fftshift(freq_channel)
+
+        #     # 3. Create a mask for low frequencies
+        #     rows, cols = H, W
+        #     crow, ccol = rows // 2 , cols // 2  # center
+        #     low_freq_mask = torch.zeros((H, W), dtype=torch.bool).to(est_normal_plane.device)
+        #     low_freq_mask[crow-cutoff_frequency:crow+cutoff_frequency, ccol-cutoff_frequency:ccol+cutoff_frequency] = True
+
+        #     # 4. Apply mask to separate low and high frequencies
+        #     low_freq_channel = freq_channel_shifted * low_freq_mask
+
+        #     # 5. Inverse shift and Inverse Fourier transform
+        #     low_freq[:, c, :, :] = torch.fft.ifft2(torch.fft.ifftshift(low_freq_channel)).real
+
+        # est_normal_plane = torch.nn.functional.normalize(est_normal_plane, dim=1)
+        # est_normal_plane = torch.nn.functional.normalize(normal_plane + est_normal_plane, dim=1) # B 3 H W
+
 
         if stage_idx==3:
             odepth = depth.clone()

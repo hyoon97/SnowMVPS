@@ -7,7 +7,7 @@ from datasets.data_io import read_pfm, save_pfm
 from utils import *
 
 from models.mvs4net_utils import stagenet, reg2d_init, gatt, reg2d_no_n, FPN4, FPN4_convnext, FPN4_convnext4, NormalNet, ConfidenceNet, \
-        init_range, schedule_range, init_inverse_range, schedule_inverse_range, ASFF, NeighborsExtractionLayer
+        init_range, schedule_range, init_inverse_range, schedule_inverse_range, ASFF, NeighborsExtractionLayer, CombineNet
         
 import torchvision.transforms as T
 
@@ -66,6 +66,9 @@ class MVS4net(nn.Module):
         self.pos_enc = pos_enc
         self.pos_enc_func = nn.ModuleList()
         self.mono = mono
+
+        self.combinenet = nn.ModuleList()
+
         # if self.mono:
         #     self.mono_depth_decoder = mono_depth_decoder()
         if reg_net == 'reg3d':
@@ -82,6 +85,15 @@ class MVS4net(nn.Module):
                     self.reg.append(gatt(input_channel=in_dim, base_channel=reg_channel, conv_name=agg_type))
             elif reg_net == 'reg2d_no_n':
                 self.reg.append(reg2d_no_n(input_channel=in_dim, base_channel=reg_channel, conv_name=agg_type))
+
+            self.combinenet.append(CombineNet(in_channels=6))
+
+        self.gauss_scale = 1
+        self._mapping_size = 3
+        self._B = torch.randn((3, self._mapping_size)).to('cuda') * self.gauss_scale
+
+        #### base 13
+        # self.regressor = PSNormalNet(in_channels=3)
 
 
     def forward(self, imgs, view_feats, rotation, proj_matrices, depth_values, pred_normal, filename=None):
@@ -127,13 +139,28 @@ class MVS4net(nn.Module):
                 sum_weight = []
             else:
                 if self.inverse_depth:
-                    depth_hypo, normal_plane = schedule_inverse_range(outputs_stage['inverse_min_depth'].detach(), outputs_stage['inverse_max_depth'].detach(), outputs_stage['normal_plane'].detach(), self.stage_splits[stage_idx], H, W)  # B D H W
+                    depth_hypo, normal_plane = schedule_inverse_range(outputs_stage['inverse_min_depth'].detach(), outputs_stage['inverse_max_depth'].detach(), 
+                                                                      outputs_stage['normal_plane'].detach(), self.stage_splits[stage_idx], H, W)  # B D H W
                 else:
-                    depth_hypo, normal_plane = schedule_range(outputs_stage['inverse_min_depth'].detach(), outputs_stage['inverse_max_depth'].detach(), outputs_stage['normal_plane'].detach(), self.stage_splits[stage_idx], H, W, sum_weight)
+                    depth_hypo, normal_plane = schedule_range(outputs_stage['inverse_min_depth'].detach(), outputs_stage['inverse_max_depth'].detach(), 
+                                                              outputs_stage['normal_plane'].detach(), self.stage_splits[stage_idx], H, W, sum_weight)
 
             resize_transform = T.Resize((H, W))
-            pred_normal_stage = resize_transform(pred_normal)                
-            outputs_stage = self.stagenet(features_stage, rotation, normal_plane, self.normalnet[stage_idx], pred_normal_stage, self.confinet, proj_matrices_stage, depth_hypo=depth_hypo, regnet=self.reg[stage_idx], stage_idx=stage_idx, neighbor = self.neighbor,
+            pred_normal_stage = resize_transform(pred_normal)
+
+            ####### freq8
+            # B, C, H, W = pred_normal_stage.shape
+            # normal_fourier = pred_normal_stage.permute(0, 2, 3, 1).reshape(B * H * W, C)
+            # normal_fourier = normal_fourier @ (1 + self._B.to(pred_normal_stage.device))
+            # normal_fourier = normal_fourier.view(B, H, W, self._mapping_size).permute(0, 3, 1, 2) # B x C x H x W
+            # normal_fourier = 2 * torch.pi * normal_fourier
+            # normal_fourier = torch.cat([torch.sin(normal_fourier), torch.cos(normal_fourier)], dim=1)
+
+            #### base 13
+            # pred_normal_stage = self.regressor(pred_normal_stage)
+
+            outputs_stage = self.stagenet(features_stage, rotation, normal_plane, pred_normal_stage, self.normalnet[stage_idx], self.confinet, proj_matrices_stage, 
+                                        depth_hypo=depth_hypo, regnet=self.reg[stage_idx], combinenet=self.combinenet[stage_idx], stage_idx=stage_idx, neighbor = self.neighbor,
                                         group_cor=self.group_cor, group_cor_dim=self.group_cor_dim[stage_idx],
                                         split_itv=self.depth_interals_ratio[stage_idx],
                                         fn=filename)
@@ -280,11 +307,16 @@ def MVS4net_loss(depth_values, inputs, ps_normal_est, depth_gt_ms, mask_ms, norm
 
         if stage_idx == 3:    
             ps_normal_loss = F.smooth_l1_loss(ps_normal_est[normal_mask], normal_gt[normal_mask], reduction='mean') # all views
-            
             total_loss = total_loss + stage_lw[stage_idx] * (pw_loss + this_stage_normal_loss + ps_normal_loss)
         else:
             total_loss = total_loss + stage_lw[stage_idx] * (pw_loss + this_stage_normal_loss)
 
+
+        #     total_loss = total_loss + stage_lw[stage_idx] * (pw_loss + this_stage_normal_loss + ps_normal_loss)
+        # else:
+        #     total_loss = total_loss + stage_lw[stage_idx] * (pw_loss + this_stage_normal_loss)
+
+        # total_loss = total_loss + stage_lw[stage_idx] * (pw_loss + this_stage_normal_loss + ps_normal_loss)
 
         #     # normal_loss += F.smooth_l1_loss(normal_est[normal_mask], normal_gt[normal_mask], reduction='mean')
         #     total_loss = total_loss + stage_lw[stage_idx] * pw_loss + stage_lw[stage_idx] * normal_loss

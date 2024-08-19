@@ -269,11 +269,11 @@ def train_sample(model, ps_model, model_loss, optimizer, sample, args):
                     #  "depth_est_nomask": depth_est_nomask_nor,
                      "depth_gt": depth_gt_nor,
                      "normal_gt": sample['normals']['stage4'][:, 0], # reference view
-                     "ps_normal_est": ps_normal_est[:, 0] * mask_ref.unsqueeze(1), # reference view
-                     "normal_est": mvs_normal_est * mask_ref.unsqueeze(1), # reference view
+                     "normal_ps": ps_normal_est[:, 0] * mask_ref.unsqueeze(1), # reference view
+                     "normal_mvs": mvs_normal_est * mask_ref.unsqueeze(1), # reference view
                      "ref_img": sample["imgs"][0],
-                     "mask": mask_ref,
-                     "errormap": (depth_est_nor - depth_gt_nor).abs(),
+                    #  "mask": mask_ref,
+                    #  "errormap": (depth_est_nor - depth_gt_nor).abs(),
                      }
 
     if is_distributed:
@@ -348,11 +348,11 @@ def test_sample_depth(model, ps_model, model_loss, sample, args):
                     #  "depth_est_nomask": depth_est_nomask_nor,
                      "depth_gt": depth_gt_nor,
                      "normal_gt": sample['normals']['stage4'][:, 0], # reference view
-                     "ps_normal_est": ps_normal_est[:, 0] * mask.unsqueeze(1), # reference view
-                     "normal_est": mvs_normal_est * mask.unsqueeze(1), # reference view
+                     "normal_ps": ps_normal_est[:, 0] * mask.unsqueeze(1), # reference view
+                     "normal_mvs": mvs_normal_est * mask.unsqueeze(1), # reference view
                      "ref_img": sample["imgs"][0],
-                     "mask": mask,
-                     "errormap": (depth_est_nor - depth_gt_nor).abs(),
+                    #  "mask": mask,
+                    #  "errormap": (depth_est_nor - depth_gt_nor).abs(),
                      }
 
     if is_distributed:
@@ -435,8 +435,8 @@ if __name__ == '__main__':
         # load checkpoint file specified by args.loadckpt
         print("loading model {}".format(args.loadckpt))
         state_dict = torch.load(args.loadckpt, map_location=torch.device("cpu"))
-        model.load_state_dict(state_dict['mvs_model'])
-        ps_model.load_state_dict(state_dict['ps_model'])
+        model.load_state_dict(state_dict['mvs_model'], strict=False)
+        ps_model.load_state_dict(state_dict['ps_model'], strict=False)
 
     if (not is_distributed) or (dist.get_rank() == 0):
         print("start at epoch {}".format(start_epoch))
