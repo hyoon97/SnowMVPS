@@ -1003,7 +1003,7 @@ class gatt(nn.Module):
         super(gatt, self).__init__()
         module = importlib.import_module("models.mvs4net_utils")
         stride_conv_name = 'ConvBnReLU3D'
-        
+
         self.qconv1 = getattr(module, stride_conv_name)(base_channel*4, base_channel*8, kernel_size=(1,1,1), stride=(1,1,1), pad=(0,0,0))
         self.qconv2 = getattr(module, stride_conv_name)(base_channel*16, base_channel*16, kernel_size=(1,1,1), stride=(1,1,1), pad=(0,0,0))
         
@@ -1012,7 +1012,7 @@ class gatt(nn.Module):
         
         self.vconv1 = getattr(module, conv_name)(4, base_channel*4, kernel_size=(3,3,3), stride=(1,2,2), pad=(1,1,1))
         self.vconv2 = getattr(module, conv_name)(base_channel*4, base_channel*16, kernel_size=(3,3,3), stride=(1,2,2), pad=(1,1,1))
-        
+
         self.conv0 = getattr(module, conv_name)(input_channel, base_channel)
         self.conv1 = getattr(module, stride_conv_name)(base_channel, base_channel*2, kernel_size=(1,3,3), stride=(1,2,2), pad=(0,1,1))
         self.conv2 = getattr(module, conv_name)(base_channel*2, base_channel*4)
@@ -1046,6 +1046,31 @@ class gatt(nn.Module):
         self.norm2 = nn.Conv3d(8, 8, 3, stride=1, padding=1)
         self.norm3 = nn.Conv3d(8, 1, 3, stride=1, padding=1)
         
+
+        # ######################
+        # self.conv51 = getattr(module, stride_conv_name)(base_channel*16, base_channel*32, kernel_size=(1,3,3), stride=(1,2,2), pad=(0,1,1))
+        # self.conv61 = getattr(module, conv_name)(base_channel*32, base_channel*32)
+
+        # self.conv71 = nn.Sequential(
+        #     nn.ConvTranspose3d(base_channel*32, base_channel*16, kernel_size=(1,5,5), padding=(0,2,2), output_padding=(0,1,1), stride=(1,2,2), bias=False),
+        #     nn.BatchNorm3d(base_channel*16),
+        #     nn.ReLU(inplace=True))
+        # self.conv81 = getattr(module, conv_name)(base_channel*16, base_channel*8)
+
+        # self.conv91 = nn.Sequential(
+        #     nn.ConvTranspose3d(base_channel*8, base_channel*4, kernel_size=(1,5,5), padding=(0,2,2), output_padding=(0,1,1), stride=(1,2,2), bias=False),
+        #     nn.BatchNorm3d(base_channel*4),
+        #     nn.ReLU(inplace=True))
+        # self.conv101 = getattr(module, conv_name)(base_channel*4, base_channel*2)
+
+        # self.conv111 = nn.Sequential(
+        #     nn.ConvTranspose3d(base_channel*2, base_channel, kernel_size=(1,5,5), padding=(0,2,2), output_padding=(0,1,1), stride=(1,2,2), bias=False),
+        #     nn.BatchNorm3d(base_channel),
+        #     nn.ReLU(inplace=True))
+
+        # self.conv01 = getattr(module, conv_name)(input_channel, base_channel)
+
+        # ##############
     # def forward(self, x, d, n):
     #     D = d.size(2)
     #     d = torch.cat((d, n.unsqueeze(2).repeat(1,1,D,1,1)), dim = 1) # B 4 D H W
@@ -1104,6 +1129,7 @@ class gatt(nn.Module):
         x = conv4 + self.conv7(x)
         x = conv2 + self.conv9(self.conv8(x))
         x = conv0 + self.conv11(self.conv10(x))
+
         n = self.norm3(self.norm2(self.norm1(x)))
         
         x = self.prob(x)

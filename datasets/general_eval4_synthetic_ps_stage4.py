@@ -583,32 +583,34 @@ class MVSDataset(Dataset):
         if self.load_intrinsics:
             sample['intrinsics'] = ref_intrinsics
             
-        ###########################################
-        if len(light_dirs) > 0 and len(shadows_stage1) > 0:
+        sample['filename'] = scene + '/{}/' + '{:0>2}'.format(view_ids[0]) + "{}"
+        
+        # ###########################################
+        # if len(light_dirs) > 0 and len(shadows_stage1) > 0:
             
-            shadows_stage1 = np.stack(shadows_stage1).transpose(0, 3, 1, 2)
-            shadows_stage2 = np.stack(shadows_stage2).transpose(0, 3, 1, 2)
-            shadows_stage3 = np.stack(shadows_stage3).transpose(0, 3, 1, 2)
-            # normals_stage4 = np.stack(normals_stage4).transpose(0, 3, 1, 2)
-            shadows = {
-                'stage1': shadows_stage1,
-                'stage2': shadows_stage2,
-                'stage3': shadows_stage3,
-                'stage4': shadows_stage4,
-            }
-            sample['shadows'] = shadows  # dict, (nviews, 3, h//4, w//4), (nviews, 3, h//2, w//2), (nviews, 3, h, w)
+        #     shadows_stage1 = np.stack(shadows_stage1).transpose(0, 3, 1, 2)
+        #     shadows_stage2 = np.stack(shadows_stage2).transpose(0, 3, 1, 2)
+        #     shadows_stage3 = np.stack(shadows_stage3).transpose(0, 3, 1, 2)
+        #     # normals_stage4 = np.stack(normals_stage4).transpose(0, 3, 1, 2)
+        #     shadows = {
+        #         'stage1': shadows_stage1,
+        #         'stage2': shadows_stage2,
+        #         'stage3': shadows_stage3,
+        #         'stage4': shadows_stage4,
+        #     }
+        #     sample['shadows'] = shadows  # dict, (nviews, 3, h//4, w//4), (nviews, 3, h//2, w//2), (nviews, 3, h, w)
     
-            speculars_stage1 = np.stack(speculars_stage1).transpose(0, 3, 1, 2)
-            speculars_stage2 = np.stack(speculars_stage2).transpose(0, 3, 1, 2)
-            speculars_stage3 = np.stack(speculars_stage3).transpose(0, 3, 1, 2)
-            # normals_stage4 = np.stack(normals_stage4).transpose(0, 3, 1, 2)
-            speculars = {
-                'stage1': speculars_stage1,
-                'stage2': speculars_stage2,
-                'stage3': speculars_stage3,
-                'stage4': speculars_stage4,
-            }
-            sample['speculars'] = speculars  # dict, (nviews, 3, h//4, w//4), (nviews, 3, h//2, w//2), (nviews, 3, h, w)
-        ###########################################
+        #     speculars_stage1 = np.stack(speculars_stage1).transpose(0, 3, 1, 2)
+        #     speculars_stage2 = np.stack(speculars_stage2).transpose(0, 3, 1, 2)
+        #     speculars_stage3 = np.stack(speculars_stage3).transpose(0, 3, 1, 2)
+        #     # normals_stage4 = np.stack(normals_stage4).transpose(0, 3, 1, 2)
+        #     speculars = {
+        #         'stage1': speculars_stage1,
+        #         'stage2': speculars_stage2,
+        #         'stage3': speculars_stage3,
+        #         'stage4': speculars_stage4,
+        #     }
+        #     sample['speculars'] = speculars  # dict, (nviews, 3, h//4, w//4), (nviews, 3, h//2, w//2), (nviews, 3, h, w)
+        # ###########################################
 
         return sample
