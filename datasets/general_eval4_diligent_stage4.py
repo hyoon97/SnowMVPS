@@ -86,6 +86,143 @@ class MVSDataset(Dataset):
 
         return img
 
+    def read_depth(self, filename):
+        depth, scale = read_pfm(filename)
+        # depth = read_exr(filename, channel_names=['Y'])
+        # depth = cv2.imread(filename, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+        depth = depth[..., None]  # (h, w, 1)
+        return depth
+
+    def read_mask(self, filename):
+        # depth = read_pfm(filename)
+        # depth = read_exr(filename, channel_names=['Y'])
+        depth = cv2.imread(filename, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+        depth = depth[..., None]  # (h, w, 1)
+        return depth
+    
+    def get_depth_z_axis(self, depth, fx, fy, H=512, W=512):
+        if len(depth.shape) == 3:
+            depth = depth.squeeze()
+        i, j = np.meshgrid(np.arange(W, dtype=np.float32),
+                           np.arange(H, dtype=np.float32), indexing='xy')
+        dirs = np.stack([(i - W * .5) / fx, (j - H * .5) / fy, np.ones(i.shape, dtype=np.float32)], -1)
+        dirs_length = np.linalg.norm(dirs, axis=-1)
+        depth_z = depth / dirs_length
+        return depth_z
+
+    def get_depth(self, depth_filename, fx, fy):
+        depth = self.read_depth(depth_filename)
+        # depth = depth[:, 50:562]
+        depth_stage3 = self.get_depth_z_axis(depth, fx, fy, 512, 512)
+        depth_stage2 = cv2.resize(depth_stage3, None, fx=1.0 / 2, fy=1.0 / 2,)  # (256, 256)
+        depth_stage1 = cv2.resize(depth_stage2, None, fx=1.0 / 2, fy=1.0 / 2,)  # (128, 128)
+        depth = {
+            'stage1': depth_stage1,
+            'stage2': depth_stage2,
+            'stage3': depth_stage3
+        }
+        return depth
+    
+    def get_depth_stage4(self, depth_filename, fx, fy):
+        depth = self.read_depth(depth_filename)
+        # depth = depth[:, 50:562]
+        depth_stage4 = self.get_depth_z_axis(depth, fx, fy, 512, 512)
+        depth_stage3 = cv2.resize(depth_stage4, None, fx=1.0 / 2, fy=1.0 / 2,)  # (256, 256)
+        depth_stage2 = cv2.resize(depth_stage3, None, fx=1.0 / 2, fy=1.0 / 2,)  # (256, 256)
+        depth_stage1 = cv2.resize(depth_stage2, None, fx=1.0 / 2, fy=1.0 / 2,)  # (128, 128)
+        depth = {
+            'stage1': depth_stage1,
+            'stage2': depth_stage2,
+            'stage3': depth_stage3,
+            'stage4': depth_stage4
+        }
+        return depth
+
+    def get_mask(self, filename, fx, fy):
+        depth = self.read_mask(filename)
+        depth = depth[:, 50:562]
+        depth = self.get_depth_z_axis(depth, fx, fy, 512, 512)
+        mask = depth > 0
+        mask_stage3 = ndimage.binary_erosion(mask, structure=np.ones((7, 7))).astype(np.float32)
+        mask_stage2 = cv2.resize(mask_stage3, None, fx=1.0 / 2, fy=1.0 / 2,)  # (256, 256)
+        mask_stage1 = cv2.resize(mask_stage2, None, fx=1.0 / 2, fy=1.0 / 2,)  # (128, 128)
+        return mask_stage1, mask_stage2, mask_stage3
+
+    def get_mask_stage4(self, filename, fx, fy):
+        depth = self.read_mask(filename)
+        depth = depth[:, 50:562]
+        depth = self.get_depth_z_axis(depth, fx, fy, 512, 512)
+        mask = depth > 0
+        mask_stage4 = ndimage.binary_erosion(mask, structure=np.ones((7, 7))).astype(np.float32)
+        mask_stage3 = cv2.resize(mask_stage4, None, fx=1.0 / 2, fy=1.0 / 2,)  # (256, 256)
+        mask_stage2 = cv2.resize(mask_stage3, None, fx=1.0 / 2, fy=1.0 / 2,)  # (128, 128)
+        mask_stage1 = cv2.resize(mask_stage2, None, fx=1.0 / 2, fy=1.0 / 2,)  # (128, 128)
+        return mask_stage1, mask_stage2, mask_stage3, mask_stage4
+
+    def read_intrinsics(self, filename):
+        with open(filename) as f:
+            lines = f.readlines()
+        intrinsics = np.fromstring(' '.join(lines), dtype=np.float32, sep=' ').reshape((3, 3))
+        return intrinsics
+
+    def read_extrinsics(self, filename):
+        extrinsics = np.load(filename)
+        return extrinsics
+
+    def load_cam_params(self):
+        xmls_path = os.path.join(self.root_dir, 'xmls', self.split)
+
+        for scene in self.scenes:
+            intrinsics = self.read_intrinsics(os.path.join(xmls_path, scene,
+                                                           'intrinsics.txt'))
+            extrinsics = self.read_extrinsics(os.path.join(xmls_path, scene,
+                                                           'cam_to_worlds.npy'))
+            if scene not in self.params:
+                self.params[scene] = {}
+            self.params[scene]['intrinsics'] = intrinsics
+            self.params[scene]['c2w'] = extrinsics
+
+    def load_light_dirs(self):
+        ''' world coordinate system. '''
+        xmls_path = os.path.join(self.root_dir, 'xmls', self.split)
+        for scene in self.scenes:
+            light_dirs = np.load(os.path.join(xmls_path, scene, 'cam_light_dirs.npy')).astype(np.float32)
+            self.params[scene]['light_dirs'] = light_dirs  # (20, 10, 3)
+
+
+    def make_scales(self, image, normalized=False, axis=2, mode=cv2.INTER_LINEAR):
+        image_stage3 = image
+        if normalized:
+            image_stage3 = normalize(image_stage3, axis)
+        image_stage2 = cv2.resize(image_stage3, None, fx=1.0/2, fy=1.0/2, interpolation=mode)
+        if normalized:
+            image_stage2 = normalize(image_stage2, axis)
+        image_stage1 = cv2.resize(image_stage2, None, fx=1.0/2, fy=1.0/2, interpolation=mode)
+        if normalized:
+            image_stage1 = normalize(image_stage1, axis)
+
+        return image_stage1, image_stage2, image_stage3
+    
+    def make_scales_stage4(self, image, normalized=False, axis=2, mode=cv2.INTER_LINEAR):
+        image_stage4 = image
+        if normalized:
+            image_stage4 = normalize(image_stage4, axis)
+        
+        image_stage3 = cv2.resize(image_stage4, None, fx=1.0/2, fy=1.0/2, interpolation=mode)
+        if normalized:
+            image_stage3 = normalize(image_stage3, axis)
+        
+        image_stage2 = cv2.resize(image_stage3, None, fx=1.0/2, fy=1.0/2, interpolation=mode)
+        if normalized:
+            image_stage2 = normalize(image_stage2, axis)
+            
+        image_stage1 = cv2.resize(image_stage2, None, fx=1.0/2, fy=1.0/2, interpolation=mode)
+        if normalized:
+            image_stage1 = normalize(image_stage1, axis)
+
+        return image_stage1, image_stage2, image_stage3, image_stage4
+    
+
     def __getitem__(self, item):
         meta = self.metas[item]
         scene, lights, ref_view, src_views = meta
@@ -96,29 +233,54 @@ class MVSDataset(Dataset):
         masks_stage1 = []
         masks_stage2 = []
         masks_stage3 = []
+        masks_stage4 = []
+        mask_erode = None
 
+        ref_depth = None
         depth_values = None
 
-        proj_matrices = []
+        proj_matrices = [] ## for SnowMVS
         proj_mats_stage1 = []
         proj_mats_stage2 = []
         proj_mats_stage3 = []
+        proj_mats_stage4 = []
+        ref_proj_inv_stage4 = None
         ref_proj_inv_stage3 = None
         ref_proj_inv_stage2 = None
         ref_proj_inv_stage1 = None
-        
-        rotation_matrices = []
 
         near = None
         far = None
 
+        albedos_stage1 = []
+        albedos_stage2 = []
+        albedos_stage3 = []
+        roughnesses = []
+        
         normals_stage1 = []
         normals_stage2 = []
         normals_stage3 = []
-
+        normals_stage4 = []
+        
         light_dirs = []
 
+        ###########################################
+        shadows_stage1 = []
+        shadows_stage2 = []
+        shadows_stage3 = []
+        shadows_stage4 = []
+
+        speculars_stage1 = []
+        speculars_stage2 = []
+        speculars_stage3 = []
+        speculars_stage4 = []
+        ###########################################
+
+        rotation_matrices = []
+        
         ref_intrinsics = None
+
+        mask_ms = None
         
         for i, vid in enumerate(view_ids):
             R = self.params[scene]['Rc_%d' % (vid + 1)].astype(np.float32).copy()  # w2c
@@ -162,6 +324,14 @@ class MVSDataset(Dataset):
             
             proj_matrices.append(proj_mat)
 
+            ## read mask and resize mask
+            mask_filename = os.path.join(self.root_dir, scene, f'view_{vid+1:02d}', 'mask.png')
+            masks = self.get_mask_stage4(mask_filename, intrinsics[0][0], intrinsics[1][1])
+            masks_stage1.append(masks[0])  # (128, 128)
+            masks_stage2.append(masks[1])
+            masks_stage3.append(masks[2])
+            masks_stage4.append(masks[3])
+
             ##### define depth range
             if i == 0:  # reference view
                 near_far = self.near_far[scene]  # tuple (2,)
@@ -169,7 +339,24 @@ class MVSDataset(Dataset):
                 near, far = near_far
                 depth_values = near * (1. - t_vals) + far * t_vals  # (D,)
                 ref_intrinsics = intrinsics
-                
+
+                depth_filename = os.path.join(self.root_dir, scene, f'view_{vid+1:02d}', 'Depth_gt.pfm')
+                # ref_depth = self.get_depth(depth_filename, intrinsics[0][0], intrinsics[1][1])
+                ref_depth = self.get_depth_stage4(depth_filename, intrinsics[0][0], intrinsics[1][1])
+
+            normal_filename = os.path.join(self.root_dir, scene, f'view_{vid+1:02d}', 'Normal_gt.mat')
+            normal = sio.loadmat(normal_filename)['Normal_gt'].astype(np.float32)
+            norm = np.sqrt((normal * normal).sum(2, keepdims=True))
+            normal = normal / (norm + 1e-10)
+            normal = normal[:, 50:562, :]
+            normal = normal * np.array([1, -1, -1]).astype(np.float32).reshape((1, 1, 3))
+
+            normals = self.make_scales_stage4(normal, normalized=True, axis=2)
+            normals_stage1.append(normals[0])
+            normals_stage2.append(normals[1])
+            normals_stage3.append(normals[2])
+            normals_stage4.append(normals[3])
+    
             # ## read mask and resize mask
             # mask_filename = os.path.join(self.root_dir, scene, 'mask_depth', f'view_{vid+1:02d}.png')
             # mask = plt.imread(mask_filename)[:, 50:562]  # crop to (512, 512)
@@ -179,6 +366,9 @@ class MVSDataset(Dataset):
             # masks_stage1.append(mask_stage1)  # (128, 128)
             # masks_stage2.append(mask_stage2)  # (h//2, w//2)
             # masks_stage3.append(mask_stage3)  # (h, w)
+
+
+
 
             # ##### proj_mats stage3
             # proj_mat_stage3 = extrinsics.copy()
@@ -246,6 +436,17 @@ class MVSDataset(Dataset):
             "stage4": proj_matrices,
         }
         
+        masks_stage1 = np.stack(masks_stage1)  # (V, H, W)
+        masks_stage2 = np.stack(masks_stage2)
+        masks_stage3 = np.stack(masks_stage3)
+        masks_stage4 = np.stack(masks_stage4)
+        masks = {
+            'stage1': masks_stage1,
+            'stage2': masks_stage2,
+            'stage3': masks_stage3,
+            'stage4': masks_stage4,
+        }
+
         # stage1_pjmats = proj_matrices.copy()
         # stage1_pjmats[:, 1, :2, :] = proj_matrices[:, 1, :2, :] / 4.0
         # stage2_pjmats = proj_matrices.copy()
@@ -277,24 +478,29 @@ class MVSDataset(Dataset):
         #     'stage2': masks_stage2,
         #     'stage3': masks_stage3,
         # }
-        # normals_stage1 = np.stack(normals_stage1).transpose(0, 3, 1, 2)
-        # normals_stage2 = np.stack(normals_stage2).transpose(0, 3, 1, 2)
-        # normals_stage3 = np.stack(normals_stage3).transpose(0, 3, 1, 2)
-        # normals = {
-        #     'stage1': normals_stage1,
-        #     'stage2': normals_stage2,
-        #     'stage3': normals_stage3,
-        # }
+        normals_stage1 = np.stack(normals_stage1).transpose(0, 3, 1, 2)
+        normals_stage2 = np.stack(normals_stage2).transpose(0, 3, 1, 2)
+        normals_stage3 = np.stack(normals_stage3).transpose(0, 3, 1, 2)
+        normals_stage4 = np.stack(normals_stage4).transpose(0, 3, 1, 2)
+        normals = {
+            'stage1': normals_stage1,
+            'stage2': normals_stage2,
+            'stage3': normals_stage3,
+            'stage4': normals_stage4,
+        }
         
         light_dirs = np.stack(light_dirs)  # (nviews, L , 3)
 
         sample = {}
         sample['imgs'] = imgs  # (nviews, L, 3, H, W)
         sample['proj_matrices'] = proj_matrices_ms  # dict, each (nviews, 4, 4)
+        sample['depth'] = ref_depth  # ref_view, dict, (h//4, w//4), (h//2, w//2), (h, w)
         sample['depth_values'] = depth_values  # (ndepth, )
+        sample['mask'] = masks  # dict, (nviews, h//4, w//4), (nviews, h//2, w//2), (nviews, h, w)
         sample['light_dirs'] = light_dirs  # (nview, L, 3)
         sample['filename'] = scene + '/{}/' + '{:0>2}'.format(view_ids[0]) + "{}"
         sample['R'] = rotation_matrices
+        sample['normals'] = normals  # dict, (nviews, 3, h//4, w//4), (nviews, 3, h//2, w//2), (nviews, 3, h, w)
         if self.load_intrinsics:
             sample['intrinsics'] = ref_intrinsics
 
