@@ -201,7 +201,7 @@ def filter_depth(scan_folder, out_folder, scene, save_folder=None):
         # load the estimated normal of the reference view
         ref_normal_est = read_pfm(os.path.join(out_folder, 'normal_est/{:0>2}.pfm'.format(ref_view)))[0]
         # ref_normal_est = read_normal_img(os.path.join(out_folder, 'normal_est/{:0>2}.jpg'.format(ref_view)))
-        ref_normal_est = (ref_normal_est / 256 - 0.5) * 2
+        # ref_normal_est = (ref_normal_est / 255 - 0.5) * 2
         
         # load the photometric mask of the reference view
         confidence = read_pfm(os.path.join(out_folder, 'confidence/{:0>2}.pfm'.format(ref_view)))[0]
