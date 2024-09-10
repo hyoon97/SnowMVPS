@@ -19,17 +19,17 @@ cudnn.deterministc = True
 
 parser = argparse.ArgumentParser(description='Predict depth, filter, and fuse.')
 
-parser.add_argument('--testpath', help='testing data path')
+parser.add_argument('--testpath', default='/ssd3/hsy/Dataset/DiLiGenT-MV/mvpmsData', help='testing data dir for some scenes')
 
 parser.add_argument('--loadckpt', default=None, help='load a specific checkpoint')
-parser.add_argument('--logdir', default=None)
-parser.add_argument('--display', action='store_true', help='display depth images and masks')
+parser.add_argument('--logdir', default='/ssd3/hsy/MVPSNet/eval/2024-08-19-11-29-04')
+parser.add_argument('--display', default=False, action='store_true', help='display depth images and masks')
 
 # filtering
 parser.add_argument('--geo_mask_thresh', default=2, type=int, help="used in geo_mask")
 parser.add_argument('--photo_mask_thresh', default=0.1, type=float, help="used in photo_mask")
 
-parser.add_argument('--save_folder', default=None, type=str)
+parser.add_argument('--save_folder', default='outputs/_mv', type=str)
 
 # parse arguments and check
 args = parser.parse_args()
@@ -199,8 +199,8 @@ def filter_depth(scan_folder, out_folder, scene, save_folder=None):
         ref_depth_est = read_pfm(os.path.join(out_folder, 'depth_est/{:0>2}.pfm'.format(ref_view)))[0]
         
         # load the estimated normal of the reference view
-        # ref_normal_est = read_pfm(os.path.join(out_folder, 'normal_est/{:0>2}.pfm'.format(ref_view)))[0]
-        ref_normal_est = read_normal_img(os.path.join(out_folder, 'normal/{:0>2}.jpg'.format(ref_view)))
+        ref_normal_est = read_pfm(os.path.join(out_folder, 'normal_est/{:0>2}.pfm'.format(ref_view)))[0]
+        # ref_normal_est = read_normal_img(os.path.join(out_folder, 'normal_est/{:0>2}.jpg'.format(ref_view)))
         ref_normal_est = (ref_normal_est / 256 - 0.5) * 2
         
         # load the photometric mask of the reference view
@@ -303,9 +303,9 @@ def filter_depth(scan_folder, out_folder, scene, save_folder=None):
         vertex_all_with_normal[prop] = vertex_normals[prop]
 
     el = PlyElement.describe(vertex_all_with_normal, 'vertex')
-    plyfilename =  os.path.join(out_folder, 'casmvps_{}.ply'.format(scene))
-    PlyData([el]).write(plyfilename)
-    LOGGER.info(f"saving the final model to {plyfilename}")
+    # plyfilename =  os.path.join(out_folder, 'casmvps_{}.ply'.format(scene))
+    # PlyData([el]).write(plyfilename)
+    # LOGGER.info(f"saving the final model to {plyfilename}")
 
     if save_folder is not None:
         PlyData([el]).write(os.path.join(save_folder, 'casmvps_{}.ply'.format(scene)))
@@ -319,16 +319,17 @@ def filter_depth(scan_folder, out_folder, scene, save_folder=None):
         vertex_all_no_normal[prop] = vertex_colors[prop]
 
     el = PlyElement.describe(vertex_all_no_normal, 'vertex')
-    plyfilename = os.path.join(out_folder, 'casmvps_{}_no_normal.ply'.format(scene))
-    PlyData([el]).write(plyfilename)
-    LOGGER.info(f"saving the final model to {plyfilename}")
+    # plyfilename = os.path.join(out_folder, 'casmvps_{}_no_normal.ply'.format(scene))
+    # PlyData([el]).write(plyfilename)
+    # LOGGER.info(f"saving the final model to {plyfilename}")
 
     if save_folder is not None:
         PlyData([el]).write(os.path.join(save_folder, 'casmvps_{}_no_normal.ply'.format(scene)))
 
 
 def step2(save_folder):
-    for scene in ['bearPNG', 'buddhaPNG', 'cowPNG', 'pot2PNG', 'readingPNG']:
+    # for scene in ['bearPNG', 'buddhaPNG', 'cowPNG', 'pot2PNG', 'readingPNG']:
+    for scene in ['bearPNG']:
         scan_folder = os.path.join(args.testpath, scene)
         out_folder = os.path.join(logdir, scene)
         # step2. filter saved depth maps with photometric confidence maps and geometric constraints

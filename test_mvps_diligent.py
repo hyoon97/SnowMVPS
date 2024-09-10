@@ -1,6 +1,6 @@
 import os
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 
 import argparse, time, sys, gc, cv2
 import torch
@@ -34,10 +34,10 @@ parser.add_argument('--dataset', default='general_eval4_diligent_stage4', help='
 parser.add_argument('--testpath', default='/ssd3/hsy/Dataset/DiLiGenT-MV/mvpmsData', help='testing data dir for some scenes')
 parser.add_argument('--testlist', default='lists/diligent_mv/test.txt', help='testing scene list')
 
-parser.add_argument('--batch_size', type=int, default=5, help='testing batch size')
+parser.add_argument('--batch_size', type=int, default=1, help='testing batch size')
 parser.add_argument('--numdepth', type=int, default=192, help='the number of depth values')
 
-parser.add_argument('--loadckpt', default='/ssd4/seongmin/workspace/SnowMVPS/checkpoints/mvsp-attention1/0.ckpt', help='load a specific checkpoint')
+parser.add_argument('--loadckpt', default='/ssd4/seongmin/workspace/SnowMVPS/checkpoints/mvps-diligent/5.ckpt', help='load a specific checkpoint')
 parser.add_argument('--outdir', default='./outputs', help='output dir')
 
 #PS Model
